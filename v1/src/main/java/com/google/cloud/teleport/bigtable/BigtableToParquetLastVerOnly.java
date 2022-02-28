@@ -85,8 +85,7 @@ public class BigtableToParquetLastVerOnly extends BigtableToParquet {
                 .via(ParquetIO.sink(BigtableRow.getClassSchema()))
                 .to(options.getOutputDirectory())
                 .withPrefix(options.getFilenamePrefix())
-                                .withSuffix(".parquet.gz")
-                                .withCompression(Compression.GZIP)
+                                .withSuffix(".parquet")
                                 .withNumShards(options.getNumShards()));
 
     return pipeline.run();
