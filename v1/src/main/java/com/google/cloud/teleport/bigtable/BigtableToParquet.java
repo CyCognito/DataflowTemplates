@@ -198,9 +198,12 @@ public class BigtableToParquet {
    */
   public static PipelineResult run(Options options, RowFilter filter) {
     DataflowPipelineOptions dataflowOpts = options.as(DataflowPipelineOptions.class);
-    dataflowOpts.setDiskSizeGb(options.getDiskSize().get());
-    dataflowOpts.setWorkerDiskType(options.getWorkerDiskType().get());
-
+    if (options.getDiskSize().isAccessible()) {
+      dataflowOpts.setDiskSizeGb(options.getDiskSize().get());
+    }
+    if (options.getWorkerDiskType() != null) {
+      dataflowOpts.setWorkerDiskType(options.getWorkerDiskType());
+    }
     Pipeline pipeline = Pipeline.create(PipelineUtils.tweakPipelineOptions(options));
     BigtableIO.Read read =
         BigtableIO.read()
