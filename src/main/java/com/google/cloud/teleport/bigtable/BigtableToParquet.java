@@ -92,6 +92,16 @@ public class BigtableToParquet {
 
     @SuppressWarnings("unused")
     void setNumShards(ValueProvider<Integer> numShards);
+
+    @Description("The first key to include in the export")
+    String getStartKey();
+
+    void setStartKey(String startKey);
+
+    @Description("The last key to include in the export")
+    String getEndKey();
+
+    void setEndKey(String startKey);
   }
 
   /**

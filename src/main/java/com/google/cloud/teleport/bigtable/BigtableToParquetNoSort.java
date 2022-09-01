@@ -15,6 +15,8 @@
  */
 package com.google.cloud.teleport.bigtable;
 
+import com.google.bigtable.v2.RowFilter;
+import com.google.protobuf.ByteString;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.beam.runners.dataflow.options.DataflowPipelineOptions;
 import org.apache.beam.sdk.Pipeline;
@@ -23,8 +25,12 @@ import org.apache.beam.sdk.coders.AvroCoder;
 import org.apache.beam.sdk.io.FileIO;
 import org.apache.beam.sdk.io.gcp.bigtable.BigtableIO;
 import org.apache.beam.sdk.io.parquet.ParquetIO;
+import org.apache.beam.sdk.io.range.ByteKey;
+import org.apache.beam.sdk.io.range.ByteKeyRange;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.transforms.MapElements;
+
+import java.nio.charset.StandardCharsets;
 
 /**
  * Dataflow pipeline that exports data from a Cloud Bigtable table to Parquet files in GCS.
@@ -49,18 +55,27 @@ public class BigtableToParquetNoSort extends BigtableToParquet {
         }
     }
 
+
     /**
      * Runs a pipeline to export data from a Cloud Bigtable table to Parquet file(s) in GCS.
      *
      * @param options arguments to the pipeline
      */
     public static PipelineResult run(Options options) {
+
         Pipeline pipeline = Pipeline.create(PipelineUtils.tweakPipelineOptions(options));
         BigtableIO.Read read =
                 BigtableIO.read()
                         .withProjectId(options.getBigtableProjectId())
                         .withInstanceId(options.getBigtableInstanceId())
                         .withTableId(options.getBigtableTableId());
+
+        // Export only rows in a certain range
+        if (options.getStartKey() != null && options.getEndKey() != null) {
+            ByteKey startKey = ByteKey.copyFrom(options.getStartKey().getBytes(StandardCharsets.UTF_8));
+            ByteKey endKey = ByteKey.copyFrom(options.getEndKey().getBytes(StandardCharsets.UTF_8));
+            read = read.withKeyRange(ByteKeyRange.of(startKey, endKey));
+        }
 
         // Do not validate input fields if it is running as a template.
         if (options.as(DataflowPipelineOptions.class).getTemplateLocation() != null) {
