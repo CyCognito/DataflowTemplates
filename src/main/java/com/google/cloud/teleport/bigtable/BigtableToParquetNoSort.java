@@ -15,8 +15,10 @@
  */
 package com.google.cloud.teleport.bigtable;
 
-import com.google.bigtable.v2.RowFilter;
-import com.google.protobuf.ByteString;
+import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.List;
+
 import org.apache.avro.generic.GenericRecord;
 import org.apache.beam.runners.dataflow.options.DataflowPipelineOptions;
 import org.apache.beam.sdk.Pipeline;
@@ -28,15 +30,20 @@ import org.apache.beam.sdk.io.parquet.ParquetIO;
 import org.apache.beam.sdk.io.range.ByteKey;
 import org.apache.beam.sdk.io.range.ByteKeyRange;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.apache.beam.sdk.options.ValueProvider;
 import org.apache.beam.sdk.transforms.MapElements;
+import org.apache.beam.sdk.transforms.SerializableFunction;
+import org.apache.commons.lang.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.nio.charset.StandardCharsets;
 
 /**
  * Dataflow pipeline that exports data from a Cloud Bigtable table to Parquet files in GCS.
  * Only the last cell version is taken
  */
 public class BigtableToParquetNoSort extends BigtableToParquet {
+    private static final Logger LOG = LoggerFactory.getLogger(BigtableToParquetNoSort.class);
 
 
     /**
@@ -62,20 +69,31 @@ public class BigtableToParquetNoSort extends BigtableToParquet {
      * @param options arguments to the pipeline
      */
     public static PipelineResult run(Options options) {
-
         Pipeline pipeline = Pipeline.create(PipelineUtils.tweakPipelineOptions(options));
         BigtableIO.Read read =
                 BigtableIO.read()
                         .withProjectId(options.getBigtableProjectId())
                         .withInstanceId(options.getBigtableInstanceId())
-                        .withTableId(options.getBigtableTableId());
+                        .withTableId(options.getBigtableTableId())
+                        .withKeyRanges(ValueProvider.NestedValueProvider.of(
+                                options.getKeyRange(),
+                                new SerializableFunction<String, List<ByteKeyRange>>() {
+                                    @Override
+                                    public List<ByteKeyRange> apply(String keyRange) {
+                                        ByteKeyRange kr = ByteKeyRange.ALL_KEYS;
+                                        if (StringUtils.isNotEmpty(keyRange) && keyRange.contains("|")) {
+                                            String[] split = keyRange.split("\\|");
+                                            String start = split[0];
+                                            String end = split[1];
 
-        // Export only rows in a certain range
-        if (options.getStartKey() != null && options.getEndKey() != null) {
-            ByteKey startKey = ByteKey.copyFrom(options.getStartKey().getBytes(StandardCharsets.UTF_8));
-            ByteKey endKey = ByteKey.copyFrom(options.getEndKey().getBytes(StandardCharsets.UTF_8));
-            read = read.withKeyRange(ByteKeyRange.of(startKey, endKey));
-        }
+                                            ByteKey startKey = ByteKey.copyFrom(start.getBytes(StandardCharsets.UTF_8));
+                                            ByteKey endKey = ByteKey.copyFrom(end.getBytes(StandardCharsets.UTF_8));
+                                            kr = ByteKeyRange.of(startKey, endKey);
+                                        }
+                                        LOG.info("ByteKeyRange  " + kr + " from " + keyRange);
+                                        return Collections.singletonList(kr);
+                                    }
+                                }));
 
         // Do not validate input fields if it is running as a template.
         if (options.as(DataflowPipelineOptions.class).getTemplateLocation() != null) {
