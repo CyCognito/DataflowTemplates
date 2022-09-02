@@ -32,7 +32,6 @@ import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.options.ValueProvider;
 import org.apache.beam.sdk.transforms.MapElements;
 import org.apache.beam.sdk.transforms.SerializableFunction;
-import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -79,7 +78,7 @@ public class BigtableToParquetNoSort extends BigtableToParquet {
                                     @Override
                                     public List<ByteKeyRange> apply(String keyRange) {
                                         ByteKeyRange kr = ByteKeyRange.ALL_KEYS;
-                                        if (StringUtils.isNotEmpty(keyRange) && keyRange.contains("|")) {
+                                        if (keyRange != null && keyRange.contains("|")) {
                                             String[] split = keyRange.split("\\|");
                                             String start = split[0];
                                             String end = split[1];
