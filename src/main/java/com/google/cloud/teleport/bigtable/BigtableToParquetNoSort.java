@@ -62,7 +62,6 @@ public class BigtableToParquetNoSort extends BigtableToParquet {
         }
     }
 
-
     /**
      * Runs a pipeline to export data from a Cloud Bigtable table to Parquet file(s) in GCS.
      *
