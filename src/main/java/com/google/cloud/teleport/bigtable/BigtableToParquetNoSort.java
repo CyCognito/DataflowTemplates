@@ -18,7 +18,6 @@ package com.google.cloud.teleport.bigtable;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
-
 import org.apache.avro.generic.GenericRecord;
 import org.apache.beam.runners.dataflow.options.DataflowPipelineOptions;
 import org.apache.beam.sdk.Pipeline;
