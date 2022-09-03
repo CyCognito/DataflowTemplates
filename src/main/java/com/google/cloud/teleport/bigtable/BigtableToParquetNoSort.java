@@ -15,8 +15,6 @@
  */
 package com.google.cloud.teleport.bigtable;
 
-import java.nio.charset.StandardCharsets;
-import java.util.Collections;
 import java.util.List;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.beam.runners.dataflow.options.DataflowPipelineOptions;
@@ -26,14 +24,11 @@ import org.apache.beam.sdk.coders.AvroCoder;
 import org.apache.beam.sdk.io.FileIO;
 import org.apache.beam.sdk.io.gcp.bigtable.BigtableIO;
 import org.apache.beam.sdk.io.parquet.ParquetIO;
-import org.apache.beam.sdk.io.range.ByteKey;
 import org.apache.beam.sdk.io.range.ByteKeyRange;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.options.ValueProvider;
 import org.apache.beam.sdk.transforms.MapElements;
 import org.apache.beam.sdk.transforms.SerializableFunction;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 
 /**
@@ -41,7 +36,6 @@ import org.slf4j.LoggerFactory;
  * Only the last cell version is taken
  */
 public class BigtableToParquetNoSort extends BigtableToParquet {
-    private static final Logger LOG = LoggerFactory.getLogger(BigtableToParquetNoSort.class);
 
 
     /**
@@ -77,18 +71,7 @@ public class BigtableToParquetNoSort extends BigtableToParquet {
                                 new SerializableFunction<String, List<ByteKeyRange>>() {
                                     @Override
                                     public List<ByteKeyRange> apply(String keyRange) {
-                                        ByteKeyRange kr = ByteKeyRange.ALL_KEYS;
-                                        if (keyRange != null && keyRange.contains("|")) {
-                                            String[] split = keyRange.split("\\|");
-                                            String start = split[0];
-                                            String end = split[1];
-
-                                            ByteKey startKey = ByteKey.copyFrom(start.getBytes(StandardCharsets.UTF_8));
-                                            ByteKey endKey = ByteKey.copyFrom(end.getBytes(StandardCharsets.UTF_8));
-                                            kr = ByteKeyRange.of(startKey, endKey);
-                                        }
-                                        LOG.info("ByteKeyRange  " + kr + " from " + keyRange);
-                                        return Collections.singletonList(kr);
+                                        return KeyRangeParamTransformer.getByteKeyRanges(keyRange);
                                     }
                                 }));
 
