@@ -15,10 +15,10 @@
  */
 package com.google.cloud.teleport.bigtable;
 
+import com.google.bigtable.v2.RowFilter;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
-import com.google.bigtable.v2.RowFilter;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.beam.runners.dataflow.options.DataflowPipelineOptions;
 import org.apache.beam.sdk.Pipeline;
