@@ -166,6 +166,11 @@ public class BigtableToParquet {
 
     @SuppressWarnings("unused")
     void setWorkerDiskType(String type);
+
+    @Description("The first key|last key to include in the export")
+    ValueProvider<String> getKeyRange();
+
+    void setKeyRange(ValueProvider<String> keyRange);
   }
 
   /**
