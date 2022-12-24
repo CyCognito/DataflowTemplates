@@ -182,7 +182,7 @@ public class BigtableToParquet {
   public static void main(String[] args) {
     Options options = PipelineOptionsFactory.fromArgs(args).withValidation().as(Options.class);
 
-    PipelineResult result = run(options, null);
+    PipelineResult result = run(options);
 
     // Wait for pipeline to finish only if it is not constructing a template.
     if (options.as(DataflowPipelineOptions.class).getTemplateLocation() == null) {
@@ -194,16 +194,8 @@ public class BigtableToParquet {
    * Runs a pipeline to export data from a Cloud Bigtable table to Parquet file(s) in GCS.
    *
    * @param options arguments to the pipeline
-   * @param filter  filter to apply, optional
    */
-  public static PipelineResult run(Options options, RowFilter filter) {
-    DataflowPipelineOptions dataflowOpts = options.as(DataflowPipelineOptions.class);
-    if (options.getDiskSize().isAccessible()) {
-      dataflowOpts.setDiskSizeGb(options.getDiskSize().get());
-    }
-    if (options.getWorkerDiskType() != null) {
-      dataflowOpts.setWorkerDiskType(options.getWorkerDiskType());
-    }
+  public static PipelineResult run(Options options) {
     Pipeline pipeline = Pipeline.create(PipelineUtils.tweakPipelineOptions(options));
     BigtableIO.Read read =
         BigtableIO.read()
@@ -212,9 +204,6 @@ public class BigtableToParquet {
             .withAppProfileId(options.getBigtableAppProfileId())
             .withTableId(options.getBigtableTableId());
 
-    if (filter != null) {
-      read.withRowFilter(filter);
-    }
     // Do not validate input fields if it is running as a template.
     if (options.as(DataflowPipelineOptions.class).getTemplateLocation() != null) {
       read = read.withoutValidation();
