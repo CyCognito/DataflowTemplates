@@ -38,8 +38,6 @@ import org.slf4j.LoggerFactory;
  * last cell version is taken
  */
 public class BigtableToParquetLastVerOnly extends BigtableToParquet {
-    private static final Logger LOG = LoggerFactory.getLogger(BigtableToParquetNoSort.class);
-
 
   /**
    * Main entry point for pipeline execution.
