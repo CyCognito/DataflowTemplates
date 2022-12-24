@@ -16,7 +16,6 @@
 package com.google.cloud.teleport.bigtable;
 
 import com.google.bigtable.v2.RowFilter;
-import org.apache.avro.generic.GenericRecord;
 import org.apache.beam.runners.dataflow.options.DataflowPipelineOptions;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.PipelineResult;
@@ -25,7 +24,6 @@ import org.apache.beam.sdk.io.FileIO;
 import org.apache.beam.sdk.io.gcp.bigtable.BigtableIO;
 import org.apache.beam.sdk.io.parquet.ParquetIO;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
-import org.apache.beam.sdk.transforms.MapElements;
 
 /**
  * Dataflow pipeline that exports data from a Cloud Bigtable table to Parquet files in GCS. Only the
@@ -41,8 +39,10 @@ public class BigtableToParquetLastVerOnly extends BigtableToParquet {
    */
   public static void main(String[] args) {
     Options options = PipelineOptionsFactory.fromArgs(args).withValidation().as(Options.class);
+        RowFilter filter = RowFilter.newBuilder()
+                .setCellsPerColumnLimitFilter(1).build();
 
-    PipelineResult result = run(options);
+        PipelineResult result = run(options, filter);
 
     // Wait for pipeline to finish only if it is not constructing a template.
     if (options.as(DataflowPipelineOptions.class).getTemplateLocation() == null) {
