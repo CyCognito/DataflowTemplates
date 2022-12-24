@@ -33,6 +33,7 @@ import org.apache.beam.sdk.transforms.MapElements;
  */
 public class BigtableToParquetLastVerOnly extends BigtableToParquet {
 
+
   /**
    * Main entry point for pipeline execution.
    *
@@ -56,7 +57,6 @@ public class BigtableToParquetLastVerOnly extends BigtableToParquet {
    */
   public static PipelineResult run(Options options) {
     Pipeline pipeline = Pipeline.create(PipelineUtils.tweakPipelineOptions(options));
-    RowFilter filter = RowFilter.newBuilder().setCellsPerColumnLimitFilter(1).build();
     BigtableIO.Read read =
         BigtableIO.read()
             .withProjectId(options.getBigtableProjectId())
@@ -70,8 +70,10 @@ public class BigtableToParquetLastVerOnly extends BigtableToParquet {
     }
 
     /**
-     * Steps: 1) Read records from Bigtable. 2) Convert a Bigtable Row to a GenericRecord. 3) Write
-     * GenericRecord(s) to GCS in parquet format.
+     * Steps:
+     * 1) Read records from Bigtable.
+     * 2) Convert a Bigtable Row to a GenericRecord.
+     * 3) Write GenericRecord(s) to GCS in parquet format.
      */
     pipeline
         .apply("Read from Bigtable", read)
