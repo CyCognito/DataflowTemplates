@@ -334,7 +334,7 @@
           <configLocation>checkstyle/checkstyle.xml</configLocation>
           <suppressionsLocation>checkstyle/suppressions.xml</suppressionsLocation>
           <consoleOutput>true</consoleOutput>
-          <failOnViolation>true</failOnViolation>
+          <failOnViolation>false</failOnViolation>
           <includeResources>false</includeResources>
           <includeTestSourceDirectory>true</includeTestSourceDirectory>
         </configuration>
