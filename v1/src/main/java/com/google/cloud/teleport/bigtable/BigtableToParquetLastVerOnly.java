@@ -32,26 +32,26 @@ import org.apache.beam.sdk.transforms.MapElements;
 import org.apache.beam.sdk.transforms.SerializableFunction;
 
 /**
- * Dataflow pipeline that exports data from a Cloud Bigtable table to Parquet files in GCS.
- * Only the last cell version is taken
+ * Dataflow pipeline that exports data from a Cloud Bigtable table to Parquet files in GCS. Only the
+ * last cell version is taken
  */
 public class BigtableToParquetLastVerOnly extends BigtableToParquet {
 
-    /**
-     * Main entry point for pipeline execution.
-     *
-     * @param args Command line arguments to the pipeline.
-     */
-    public static void main(String[] args) {
-        Options options = PipelineOptionsFactory.fromArgs(args).withValidation().as(Options.class);
+  /**
+   * Main entry point for pipeline execution.
+   *
+   * @param args Command line arguments to the pipeline.
+   */
+  public static void main(String[] args) {
+    Options options = PipelineOptionsFactory.fromArgs(args).withValidation().as(Options.class);
 
         PipelineResult result = run(options);
 
-        // Wait for pipeline to finish only if it is not constructing a template.
-        if (options.as(DataflowPipelineOptions.class).getTemplateLocation() == null) {
-            result.waitUntilFinish();
-        }
+    // Wait for pipeline to finish only if it is not constructing a template.
+    if (options.as(DataflowPipelineOptions.class).getTemplateLocation() == null) {
+      result.waitUntilFinish();
     }
+  }
 
     /**
      * Runs a pipeline to export data from a Cloud Bigtable table to Parquet file(s) in GCS.

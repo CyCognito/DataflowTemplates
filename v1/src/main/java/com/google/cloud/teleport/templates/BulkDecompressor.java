@@ -159,11 +159,11 @@ public class BulkDecompressor {
    * command-line.
    */
   public interface Options extends PipelineOptions {
-    @TemplateParameter.Text(
+    @TemplateParameter.GcsReadFile(
         order = 1,
+        groupName = "Source",
         description = "Input Cloud Storage File(s)",
         helpText = "The Cloud Storage location of the files you'd like to process.",
-        regexes = {"^gs:\\/\\/[^\\n\\r]+$"},
         example = "gs://your-bucket/your-files/*.gz")
     @Required
     ValueProvider<String> getInputFilePattern();
@@ -172,6 +172,7 @@ public class BulkDecompressor {
 
     @TemplateParameter.GcsWriteFolder(
         order = 2,
+        groupName = "Target",
         description = "Output file directory in Cloud Storage",
         helpText =
             "The path and filename prefix for writing output files. Must end with a slash. DateTime formatting is used to parse directory path for date & time formatters.",

@@ -15,6 +15,7 @@
  */
 package com.google.cloud.teleport.v2.templates;
 
+import static com.google.cloud.teleport.v2.utils.GCSUtils.getGcsFileAsString;
 import static com.google.cloud.teleport.v2.utils.KMSUtils.maybeDecrypt;
 
 import com.google.api.services.bigquery.model.TableRow;
@@ -23,10 +24,12 @@ import com.google.cloud.teleport.metadata.TemplateCategory;
 import com.google.cloud.teleport.v2.common.UncaughtExceptionLogger;
 import com.google.cloud.teleport.v2.options.JdbcToBigQueryOptions;
 import com.google.cloud.teleport.v2.utils.BigQueryIOUtils;
+import com.google.cloud.teleport.v2.utils.GCSAwareValueProvider;
 import com.google.cloud.teleport.v2.utils.JdbcConverters;
 import com.google.common.annotations.VisibleForTesting;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.PipelineResult;
+import org.apache.beam.sdk.io.FileSystems;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.Write;
 import org.apache.beam.sdk.io.gcp.bigquery.TableRowJsonCoder;
@@ -141,16 +144,19 @@ public class JdbcToBigQuery {
       }
 
       if (options.getFetchSize() != null && options.getFetchSize() > 0) {
-        // TODO: uncomment this line once https://github.com/apache/beam/pull/28999 is released.
-        // readIO = readIO.withFetchSize(options.getFetchSize());
+        readIO = readIO.withFetchSize(options.getFetchSize());
       }
 
       rows = pipeline.apply("Read from JDBC with Partitions", readIO);
     } else {
+      if (options.getQuery() == null) {
+        throw new IllegalArgumentException(
+            "Either 'query' or both 'table' AND 'PartitionColumn' must be specified to read from JDBC");
+      }
       JdbcIO.Read<TableRow> readIO =
           JdbcIO.<TableRow>read()
               .withDataSourceConfiguration(dataSourceConfiguration)
-              .withQuery(options.getQuery())
+              .withQuery(new GCSAwareValueProvider(options.getQuery()))
               .withCoder(TableRowJsonCoder.of())
               .withRowMapper(JdbcConverters.getResultSetToTableRow(options.getUseColumnAlias()));
 
@@ -175,15 +181,25 @@ public class JdbcToBigQuery {
    */
   @VisibleForTesting
   static Write<TableRow> writeToBQTransform(JdbcToBigQueryOptions options) {
-    return BigQueryIO.writeTableRows()
-        .withoutValidation()
-        .withCreateDisposition(Write.CreateDisposition.CREATE_NEVER)
-        .withWriteDisposition(
-            options.getIsTruncate()
-                ? Write.WriteDisposition.WRITE_TRUNCATE
-                : Write.WriteDisposition.WRITE_APPEND)
-        .withCustomGcsTempLocation(
-            StaticValueProvider.of(options.getBigQueryLoadingTemporaryDirectory()))
-        .to(options.getOutputTable());
+    // Needed for loading GCS filesystem before Pipeline.Create call
+    FileSystems.setDefaultPipelineOptions(options);
+    Write<TableRow> write =
+        BigQueryIO.writeTableRows()
+            .withoutValidation()
+            .withCreateDisposition(Write.CreateDisposition.valueOf(options.getCreateDisposition()))
+            .withWriteDisposition(
+                options.getIsTruncate()
+                    ? Write.WriteDisposition.WRITE_TRUNCATE
+                    : Write.WriteDisposition.WRITE_APPEND)
+            .withCustomGcsTempLocation(
+                StaticValueProvider.of(options.getBigQueryLoadingTemporaryDirectory()))
+            .to(options.getOutputTable());
+
+    if (Write.CreateDisposition.valueOf(options.getCreateDisposition())
+        != Write.CreateDisposition.CREATE_NEVER) {
+      write = write.withJsonSchema(getGcsFileAsString(options.getBigQuerySchemaPath()));
+    }
+
+    return write;
   }
 }

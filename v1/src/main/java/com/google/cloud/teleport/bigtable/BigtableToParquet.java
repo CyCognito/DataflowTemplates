@@ -37,10 +37,7 @@ import org.apache.beam.sdk.extensions.avro.coders.AvroCoder;
 import org.apache.beam.sdk.io.FileIO;
 import org.apache.beam.sdk.io.gcp.bigtable.BigtableIO;
 import org.apache.beam.sdk.io.parquet.ParquetIO;
-import org.apache.beam.sdk.options.Default;
-import org.apache.beam.sdk.options.PipelineOptions;
-import org.apache.beam.sdk.options.PipelineOptionsFactory;
-import org.apache.beam.sdk.options.ValueProvider;
+import org.apache.beam.sdk.options.*;
 import org.apache.beam.sdk.transforms.MapElements;
 import org.apache.beam.sdk.transforms.SimpleFunction;
 import org.apache.beam.sdk.values.PCollection;
@@ -75,9 +72,10 @@ public class BigtableToParquet {
 
     @TemplateParameter.ProjectId(
         order = 1,
+        groupName = "Source",
         description = "Project ID",
         helpText =
-            "The ID of the Google Cloud project of the Cloud Bigtable instance that you want to read data from")
+            "The ID of the Google Cloud project that contains the Cloud Bigtable instance that you want to read data from.")
     ValueProvider<String> getBigtableProjectId();
 
     @SuppressWarnings("unused")
@@ -85,9 +83,10 @@ public class BigtableToParquet {
 
     @TemplateParameter.Text(
         order = 2,
+        groupName = "Source",
         regexes = {"[a-z][a-z0-9\\-]+[a-z0-9]"},
         description = "Instance ID",
-        helpText = "The ID of the Cloud Bigtable instance that contains the table")
+        helpText = "The ID of the Cloud Bigtable instance that contains the table.")
     ValueProvider<String> getBigtableInstanceId();
 
     @SuppressWarnings("unused")
@@ -95,9 +94,10 @@ public class BigtableToParquet {
 
     @TemplateParameter.Text(
         order = 3,
+        groupName = "Source",
         regexes = {"[_a-zA-Z0-9][-_.a-zA-Z0-9]*"},
         description = "Table ID",
-        helpText = "The ID of the Cloud Bigtable table to export")
+        helpText = "The ID of the Cloud Bigtable table to export.")
     ValueProvider<String> getBigtableTableId();
 
     @SuppressWarnings("unused")
@@ -105,10 +105,10 @@ public class BigtableToParquet {
 
     @TemplateParameter.GcsWriteFolder(
         order = 4,
+        groupName = "Target",
         description = "Output file directory in Cloud Storage",
         helpText =
-            "The path and filename prefix for writing output files. Must end with a slash. DateTime formatting is used to parse directory path for date & time formatters.",
-        example = "gs://your-bucket/your-path")
+            "The path and filename prefix for writing output files. Must end with a slash. DateTime formatting is used to parse the directory path for date and time formatters. For example: gs://your-bucket/your-path.")
     ValueProvider<String> getOutputDirectory();
 
     @SuppressWarnings("unused")
@@ -116,8 +116,10 @@ public class BigtableToParquet {
 
     @TemplateParameter.Text(
         order = 5,
+        groupName = "Target",
         description = "Parquet file prefix",
-        helpText = "The prefix of the Parquet file name. For example, \"table1-\"")
+        helpText =
+            "The prefix of the Parquet file name. For example, \"table1-\". Defaults to: part.")
     @Default.String("part")
     ValueProvider<String> getFilenamePrefix();
 
@@ -126,13 +128,11 @@ public class BigtableToParquet {
 
     @TemplateParameter.Integer(
         order = 6,
+        groupName = "Target",
         optional = true,
         description = "Maximum output shards",
         helpText =
-            "The maximum number of output shards produced when writing. A higher number of "
-                + "shards means higher throughput for writing to Cloud Storage, but potentially higher "
-                + "data aggregation cost across shards when processing output Cloud Storage files. "
-                + "Default value is decided by Dataflow.")
+            "The maximum number of output shards produced when writing. A higher number of shards means higher throughput for writing to Cloud Storage, but potentially higher data aggregation cost across shards when processing output Cloud Storage files. The default value is decided by Dataflow.")
     @Default.Integer(0)
     ValueProvider<Integer> getNumShards();
 
@@ -140,10 +140,33 @@ public class BigtableToParquet {
     void setNumShards(ValueProvider<Integer> numShards);
 
     @TemplateParameter.Text(
-            order = 7,
-            description = "The first key|last key to include in the export",
-            helpText = "The first key|last key to include in the export for filtered export, Default - all keys",
-            example = "start|end")
+        order = 7,
+        groupName = "Source",
+        optional = true,
+        regexes = {"[_a-zA-Z0-9][-_.a-zA-Z0-9]*"},
+        description = "Application profile ID",
+        helpText =
+            "The ID of the Bigtable application profile to use for the export. If you don't specify an app profile, Bigtable uses the instance's default app profile: https://cloud.google.com/bigtable/docs/app-profiles#default-app-profile.")
+    @Default.String("default")
+    ValueProvider<String> getBigtableAppProfileId();
+
+    @SuppressWarnings("unused")
+    void setBigtableAppProfileId(ValueProvider<String> appProfileId);
+
+    @Description("Disk size, GB")
+    @Default.Integer(25)
+    ValueProvider<Integer> getDiskSize();
+
+    @SuppressWarnings("unused")
+    void setDiskSize(ValueProvider<Integer> sizeGB);
+
+    @Description("Worker disk type")
+    String getWorkerDiskType();
+
+    @SuppressWarnings("unused")
+    void setWorkerDiskType(String type);
+
+    @Description("The first key|last key to include in the export")
     ValueProvider<String> getKeyRange();
 
     void setKeyRange(ValueProvider<String> keyRange);
@@ -176,6 +199,7 @@ public class BigtableToParquet {
         BigtableIO.read()
             .withProjectId(options.getBigtableProjectId())
             .withInstanceId(options.getBigtableInstanceId())
+            .withAppProfileId(options.getBigtableAppProfileId())
             .withTableId(options.getBigtableTableId());
 
     // Do not validate input fields if it is running as a template.

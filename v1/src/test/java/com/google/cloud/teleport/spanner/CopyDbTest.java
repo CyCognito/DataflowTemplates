@@ -24,6 +24,7 @@ import com.google.cloud.spanner.DatabaseClient;
 import com.google.cloud.spanner.Dialect;
 import com.google.cloud.spanner.ReadOnlyTransaction;
 import com.google.cloud.teleport.spanner.common.Type;
+import com.google.cloud.teleport.spanner.common.Type.StructField;
 import com.google.cloud.teleport.spanner.ddl.Ddl;
 import com.google.cloud.teleport.spanner.ddl.InformationSchemaScanner;
 import com.google.cloud.teleport.spanner.ddl.RandomDdlGenerator;
@@ -104,6 +105,7 @@ public class CopyDbTest {
               .column("id").int64().notNull().endColumn()
               .column("bool_field").bool().endColumn()
               .column("int64_field").int64().endColumn()
+              .column("float32_field").float32().endColumn()
               .column("float64_field").float64().endColumn()
               .column("string_field").string().max().endColumn()
               .column("bytes_field").bytes().max().endColumn()
@@ -111,6 +113,7 @@ public class CopyDbTest {
               .column("date_field").date().endColumn()
               .column("arr_bool_field").type(Type.array(Type.bool())).endColumn()
               .column("arr_int64_field").type(Type.array(Type.int64())).endColumn()
+              .column("arr_float32_field").type(Type.array(Type.float32())).endColumn()
               .column("arr_float64_field").type(Type.array(Type.float64())).endColumn()
               .column("arr_string_field").type(Type.array(Type.string())).max().endColumn()
               .column("arr_bytes_field").type(Type.array(Type.bytes())).max().endColumn()
@@ -167,7 +170,10 @@ public class CopyDbTest {
             .column("int_field")
             .pgInt8()
             .endColumn()
-            .column("float_field")
+            .column("float32_field")
+            .pgFloat4()
+            .endColumn()
+            .column("float64_field")
             .pgFloat8()
             .endColumn()
             .column("string_field")
@@ -191,7 +197,10 @@ public class CopyDbTest {
             .column("arr_int_field")
             .type(Type.pgArray(Type.pgInt8()))
             .endColumn()
-            .column("arr_float_field")
+            .column("arr_float32_field")
+            .type(Type.pgArray(Type.pgFloat4()))
+            .endColumn()
+            .column("arr_float64_field")
             .type(Type.pgArray(Type.pgFloat8()))
             .endColumn()
             .column("arr_string_field")
@@ -215,7 +224,7 @@ public class CopyDbTest {
             .asc("first_name")
             .asc("last_name")
             .asc("id")
-            .asc("float_field")
+            .asc("float64_field")
             .end()
             .interleaveInParent("Users")
             .onDeleteCascade()
@@ -242,6 +251,7 @@ public class CopyDbTest {
               .column("id").int64().notNull().endColumn()
               .column("bool_field").bool().endColumn()
               .column("int64_field").int64().endColumn()
+              .column("float32_field").float32().endColumn()
               .column("float64_field").float64().endColumn()
               .column("string_field").string().max().endColumn()
               .column("bytes_field").bytes().max().endColumn()
@@ -249,6 +259,7 @@ public class CopyDbTest {
               .column("date_field").date().endColumn()
               .column("arr_bool_field").type(Type.array(Type.bool())).endColumn()
               .column("arr_int64_field").type(Type.array(Type.int64())).endColumn()
+              .column("arr_float32_field").type(Type.array(Type.float32())).endColumn()
               .column("arr_float64_field").type(Type.array(Type.float64())).endColumn()
               .column("arr_string_field").type(Type.array(Type.string())).max().endColumn()
               .column("arr_bytes_field").type(Type.array(Type.bytes())).max().endColumn()
@@ -316,7 +327,10 @@ public class CopyDbTest {
             .column("int_field")
             .pgInt8()
             .endColumn()
-            .column("float_field")
+            .column("float32_field")
+            .pgFloat4()
+            .endColumn()
+            .column("float64_field")
             .pgFloat8()
             .endColumn()
             .column("string_field")
@@ -397,6 +411,7 @@ public class CopyDbTest {
               .column("id").int64().notNull().endColumn()
               .column("bool_field").bool().endColumn()
               .column("int64_field").int64().endColumn()
+              .column("float32_field").float32().endColumn()
               .column("float64_field").float64().endColumn()
               .column("string_field").string().max().endColumn()
               .column("bytes_field").bytes().max().endColumn()
@@ -404,6 +419,7 @@ public class CopyDbTest {
               .column("date_field").date().endColumn()
               .column("arr_bool_field").type(Type.array(Type.bool())).endColumn()
               .column("arr_int64_field").type(Type.array(Type.int64())).endColumn()
+              .column("arr_float32_field").type(Type.array(Type.float32())).endColumn()
               .column("arr_float64_field").type(Type.array(Type.float64())).endColumn()
               .column("arr_string_field").type(Type.array(Type.string())).max().endColumn()
               .column("arr_bytes_field").type(Type.array(Type.bytes())).max().endColumn()
@@ -459,7 +475,10 @@ public class CopyDbTest {
             .column("int_field")
             .pgInt8()
             .endColumn()
-            .column("float_field")
+            .column("float32_field")
+            .pgFloat4()
+            .endColumn()
+            .column("float64_field")
             .pgFloat8()
             .endColumn()
             .column("string_field")
@@ -764,19 +783,28 @@ public class CopyDbTest {
   @Test
   public void models() throws Exception {
     // spotless:off
-    String endpoint =
-        "//aiplatform.googleapis.com/projects/span-cloud-testing/locations/us-central1/endpoints/4608339105032437760";
     Ddl ddl =
         Ddl.builder()
             .createModel("Iris")
             .remote(true)
-            .options(ImmutableList.of("endpoint=\"" + endpoint + "\""))
+            .options(ImmutableList.of(
+                "endpoint=\"//aiplatform.googleapis.com/projects/span-cloud-testing/locations/us-central1/endpoints/4608339105032437760\""))
             .inputColumn("f1").type(Type.float64()).size(-1).endInputColumn()
             .inputColumn("f2").type(Type.float64()).size(-1).endInputColumn()
             .inputColumn("f3").type(Type.float64()).size(-1).endInputColumn()
             .inputColumn("f4").type(Type.float64()).size(-1).endInputColumn()
             .outputColumn("classes").type(Type.array(Type.string())).size(-1).endOutputColumn()
             .outputColumn("scores").type(Type.array(Type.float64())).size(-1).endOutputColumn()
+            .endModel()
+            .createModel("TextEmbeddingGecko")
+            .remote(true)
+            .options(ImmutableList.of(
+                "endpoint=\"//aiplatform.googleapis.com/projects/span-cloud-testing/locations/us-central1/publishers/google/models/textembedding-gecko\""))
+            .inputColumn("content").type(Type.string()).size(-1).endInputColumn()
+            .outputColumn("embeddings").type(Type.struct(
+                StructField.of("statistics", Type.struct(StructField.of("truncated", Type.bool()),
+                    StructField.of("token_count", Type.float64()))),
+                StructField.of("values", Type.array(Type.float64())))).size(-1).endOutputColumn()
             .endModel()
             .build();
     // spotless:on
@@ -896,8 +924,21 @@ public class CopyDbTest {
             .createSequence("Sequence3")
             .options(ImmutableList.of("sequence_kind=\"bit_reversed_positive\""))
             .endSequence()
+            .createTable("UsersWithSequenceId")
+            .column("id")
+            .int64()
+            .notNull()
+            .defaultExpression("GET_NEXT_SEQUENCE_VALUE(SEQUENCE Sequence3)")
+            .endColumn()
+            .column("first_name")
+            .string()
+            .size(10)
+            .endColumn()
+            .primaryKey()
+            .asc("id")
+            .end()
+            .endTable()
             .build();
-
     createAndPopulate(ddl, 0);
     runTest();
   }
@@ -919,6 +960,20 @@ public class CopyDbTest {
             .createSequence("PGSequence3")
             .sequenceKind("bit_reversed_positive")
             .endSequence()
+            .createTable("PGUsersWithSequenceId")
+            .column("id")
+            .pgInt8()
+            .notNull()
+            .defaultExpression("nextval('\"PGSequence3\"')")
+            .endColumn()
+            .column("first_name")
+            .pgVarchar()
+            .size(10)
+            .endColumn()
+            .primaryKey()
+            .asc("id")
+            .end()
+            .endTable()
             .build();
 
     createAndPopulate(ddl, 0);

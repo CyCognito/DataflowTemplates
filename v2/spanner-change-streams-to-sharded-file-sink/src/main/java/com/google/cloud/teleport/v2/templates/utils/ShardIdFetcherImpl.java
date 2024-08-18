@@ -29,9 +29,11 @@ import org.slf4j.LoggerFactory;
 public class ShardIdFetcherImpl implements IShardIdFetcher {
   private static final Logger LOG = LoggerFactory.getLogger(ShardIdFetcherImpl.class);
   private final Schema schema;
+  private final String skipDirName;
 
-  public ShardIdFetcherImpl(Schema schema) {
+  public ShardIdFetcherImpl(Schema schema, String skipDirName) {
     this.schema = schema;
+    this.skipDirName = skipDirName;
   }
 
   @Override
@@ -63,13 +65,15 @@ public class ShardIdFetcherImpl implements IShardIdFetcher {
 
   private String getShardIdColumnForTableName(String tableName) throws IllegalArgumentException {
     if (!schema.getSpannerToID().containsKey(tableName)) {
-      throw new IllegalArgumentException(
-          "Table " + tableName + " found in change record but not found in session file.");
+      LOG.warn(
+          "Table {} found in change record but not found in session file. Skipping record",
+          tableName);
+      return "";
     }
     String tableId = schema.getSpannerToID().get(tableName).getName();
     if (!schema.getSpSchema().containsKey(tableId)) {
-      throw new IllegalArgumentException(
-          "Table " + tableId + " not found in session file. Please provide a valid session file.");
+      LOG.warn("Table {} not found in session file. Skipping record.", tableId);
+      return "";
     }
     SpannerTable spTable = schema.getSpSchema().get(tableId);
     String shardColId = spTable.getShardIdColumn();
@@ -80,5 +84,10 @@ public class ShardIdFetcherImpl implements IShardIdFetcher {
               + " not found in session file. Please provide a valid session file.");
     }
     return spTable.getColDefs().get(shardColId).getName();
+  }
+
+  @Override
+  public void init(String parameters) {
+    LOG.info("init called with {}", parameters);
   }
 }

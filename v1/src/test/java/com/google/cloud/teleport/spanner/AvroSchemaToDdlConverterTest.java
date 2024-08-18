@@ -123,18 +123,63 @@ public class AvroSchemaToDdlConverterTest {
             + "    \"type\":[\"null\",{\"type\":\"array\",\"items\":[\"null\",\"string\"]}]"
             + "  }, {"
             // Omitting sqlType
+            + "    \"name\" : \"proto\","
+            + "    \"type\" : [ \"null\", \"bytes\" ],"
+            + "    \"sqlType\" : "
+            + "\"PROTO<com.google.cloud.teleport.spanner.tests.TestMessage>\""
+            + "  }, {"
+            + "    \"name\" : \"notProto\","
+            + "    \"type\" : [ \"null\", \"bytes\" ]" // Omitting sqlType
+            + "  }, {"
+            + "    \"name\":\"protoArr\","
+            + "    \"type\":[\"null\",{\"type\":\"array\",\"items\":[\"null\",\"bytes\"]}],"
+            + "    \"sqlType\":"
+            + "\"ARRAY<PROTO<com.google.cloud.teleport.spanner.tests.TestMessage>>\""
+            + "  }, {"
+            + "    \"name\":\"notProtoArr\","
+            + "    \"type\":[\"null\",{\"type\":\"array\",\"items\":[\"null\",\"bytes\"]}]"
+            + "  }, {"
+            // Omitting sqlType
+            + "    \"name\" : \"enum\","
+            + "    \"type\" : [ \"null\", \"long\" ],"
+            + "    \"sqlType\" : \"ENUM<com.google.cloud.teleport.spanner.tests.TestEnum>\""
+            + "  }, {"
+            + "    \"name\" : \"notEnum\","
+            + "    \"type\" : [ \"null\", \"long\" ]" // Omitting sqlType
+            + "  }, {"
+            + "    \"name\":\"enumArr\","
+            + "    \"type\":[\"null\",{\"type\":\"array\",\"items\":[\"null\",\"long\"]}],"
+            + "    \"sqlType\":"
+            + "\"ARRAY<ENUM<com.google.cloud.teleport.spanner.tests.TestEnum>>\""
+            + "  }, {"
+            + "    \"name\":\"notEnumArr\","
+            + "    \"type\":[\"null\",{\"type\":\"array\",\"items\":[\"null\",\"long\"]}]"
+            + "  }, {"
+            // Omitting sqlType
             + "    \"name\" : \"boolean\","
             + "    \"type\" : [ \"null\", \"boolean\" ]"
             + "  }, {"
             + "    \"name\" : \"integer\","
             + "    \"type\" : [ \"null\", \"long\" ]"
             + "  }, {"
-            + "    \"name\" : \"float\","
+            + "    \"name\" : \"float32\","
+            + "    \"type\" : [ \"null\", \"float\" ]"
+            + "  }, {"
+            + "    \"name\" : \"float64\","
             + "    \"type\" : [ \"null\", \"double\" ]"
             + "  }, {"
             + "    \"name\" : \"timestamp\","
             + "    \"type\" : [ \"null\", {\"type\":\"long\",\"logicalType\":\"timestamp-micros\"}]"
-            + "  }],"
+            + "  }, {"
+            + "    \"name\" : \"MyTokens\","
+            + "    \"type\" : \"null\","
+            + "    \"default\" : null,"
+            + "    \"sqlType\" : \"TOKENLIST\","
+            + "    \"hidden\" : \"true\","
+            + "    \"notNull\" : \"false\","
+            + "    \"generationExpression\" : \"(TOKENIZE_FULLTEXT(MyData))\","
+            + "    \"stored\" : \"false\""
+            + " }],"
             + "  \"googleStorage\" : \"CloudSpanner\","
             + "  \"spannerParent\" : \"\","
             + "  \"googleFormatVersion\" : \"booleans\","
@@ -178,10 +223,20 @@ public class AvroSchemaToDdlConverterTest {
                 + " `notJson`         STRING(MAX),"
                 + " `jsonArr`         ARRAY<JSON>,"
                 + " `notJsonArr`      ARRAY<STRING(MAX)>,"
+                + " `proto`           `com.google.cloud.teleport.spanner.tests.TestMessage`,"
+                + " `notProto`        BYTES(MAX),"
+                + " `protoArr`        ARRAY<`com.google.cloud.teleport.spanner.tests.TestMessage`>,"
+                + " `notProtoArr`     ARRAY<BYTES(MAX)>,"
+                + " `enum`            `com.google.cloud.teleport.spanner.tests.TestEnum`,"
+                + " `notEnum`         INT64,"
+                + " `enumArr`         ARRAY<`com.google.cloud.teleport.spanner.tests.TestEnum`>,"
+                + " `notEnumArr`      ARRAY<INT64>,"
                 + " `boolean`         BOOL,"
                 + " `integer`         INT64,"
-                + " `float`           FLOAT64,"
+                + " `float32`         FLOAT32,"
+                + " `float64`         FLOAT64,"
                 + " `timestamp`       TIMESTAMP,"
+                + " `MyTokens`                              TOKENLIST AS ((TOKENIZE_FULLTEXT(MyData))) HIDDEN,"
                 + " CONSTRAINT `ck` CHECK(`first_name` != 'last_name'),"
                 + " ) PRIMARY KEY (`id` ASC, `gen_id` ASC, `last_name` DESC)"
                 + " CREATE INDEX `UsersByFirstName` ON `Users` (`first_name`)"
@@ -256,7 +311,11 @@ public class AvroSchemaToDdlConverterTest {
             + "    \"type\" : [ \"null\", \"boolean\" ],"
             + "    \"sqlType\" : \"boolean\""
             + "  }, {"
-            + "    \"name\" : \"float\","
+            + "    \"name\" : \"float32\","
+            + "    \"type\" : [ \"null\", \"float\" ],"
+            + "    \"sqlType\" : \"real\""
+            + "  }, {"
+            + "    \"name\" : \"float64\","
             + "    \"type\" : [ \"null\", \"double\" ],"
             + "    \"sqlType\" : \"double precision\""
             + "  }, {"
@@ -296,7 +355,10 @@ public class AvroSchemaToDdlConverterTest {
             + "    \"name\" : \"integer1\","
             + "    \"type\" : [ \"null\", \"long\" ]"
             + "  }, {"
-            + "    \"name\" : \"float1\","
+            + "    \"name\" : \"float321\","
+            + "    \"type\" : [ \"null\", \"float\" ]"
+            + "  }, {"
+            + "    \"name\" : \"float641\","
             + "    \"type\" : [ \"null\", \"double\" ]"
             + "  }, {"
             + "    \"name\" : \"timestamp1\","
@@ -339,7 +401,8 @@ public class AvroSchemaToDdlConverterTest {
                 + " \"numericArr\"         numeric[],"
                 + " \"notNumericArr\"      bytea[],"
                 + " \"bool\" boolean,"
-                + " \"float\" double precision,"
+                + " \"float32\" real,"
+                + " \"float64\" double precision,"
                 + " \"bytes\" bytea,"
                 + " \"text\" text,"
                 + " \"timestamptz\" timestamp with time zone,"
@@ -349,7 +412,8 @@ public class AvroSchemaToDdlConverterTest {
                 + " \"varcharArr2\"     character varying[],"
                 + " \"boolean\"         boolean,"
                 + " \"integer1\"        bigint,"
-                + " \"float1\"          double precision,"
+                + " \"float321\"        real,"
+                + " \"float641\"        double precision,"
                 + " \"timestamp1\"      timestamp with time zone,"
                 + " CONSTRAINT \"ck\" CHECK(\"first_name\" != \"last_name\"),"
                 + " PRIMARY KEY (\"id\", \"gen_id\", \"last_name\")"
@@ -421,15 +485,49 @@ public class AvroSchemaToDdlConverterTest {
             + "      \"fields\":["
             + "        {\"name\":\"o1\", \"type\":\"long\", \"sqlType\":\"INT64\"}]}}] "
             + "}";
+    String modelStructString =
+        "{"
+            + "\"type\":\"record\","
+            + "\"name\":\"ModelStruct\","
+            + "\"namespace\":\"spannertest\","
+            + "\"googleFormatVersion\":\"booleans\","
+            + "\"googleStorage\":\"CloudSpanner\", "
+            + "\"spannerEntity\":\"Model\", "
+            + "\"spannerRemote\":\"false\", "
+            + "\"fields\":["
+            + "  {\"name\":\"Input\","
+            + "   \"type\":"
+            + "     {\"type\":\"record\","
+            + "      \"name\":\"ModelStruct_Input\","
+            + "      \"fields\":["
+            + "        {\"name\":\"i1\","
+            + "         \"sqlType\":\"STRUCT<a BOOL>\","
+            + "         \"type\": "
+            + "           {\"type\":\"record\","
+            + "            \"name\":\"ModelStruct_struct_input_0\","
+            + "            \"fields\":[{\"name\":\"a\",\"type\":\"boolean\"}]}}]}},"
+            + "  {\"name\":\"Output\","
+            + "   \"type\":"
+            + "     {\"type\":\"record\","
+            + "      \"name\":\"ModelStruct_Output\","
+            + "      \"fields\":["
+            + "        {\"name\":\"o1\","
+            + "         \"sqlType\":\"STRUCT<a BOOL, b ARRAY<STRUCT<c STRING(MAX), d ARRAY<FLOAT64>>>, e STRUCT<f STRUCT<g INT64>>>\","
+            + "         \"type\": "
+            + "           {\"type\":\"record\","
+            + "            \"name\":\"ModelStruct_struct_output_0\","
+            + "            \"fields\":[{\"name\":\"a\",\"type\":\"boolean\"}]}}]}}]"
+            + "}";
 
     Collection<Schema> schemas = new ArrayList<>();
     Schema.Parser parser = new Schema.Parser();
     schemas.add(parser.parse(modelAllString));
     schemas.add(parser.parse(modelMinString));
+    schemas.add(parser.parse(modelStructString));
 
     AvroSchemaToDdlConverter converter = new AvroSchemaToDdlConverter();
     Ddl ddl = converter.toDdl(schemas);
-    assertThat(ddl.models(), hasSize(2));
+    assertThat(ddl.models(), hasSize(3));
     assertThat(
         ddl.prettyPrint(),
         equalToCompressingWhiteSpace(
@@ -445,7 +543,10 @@ public class AvroSchemaToDdlConverterTest {
                 + " REMOTE OPTIONS (endpoint=\"test\")"
                 + " CREATE MODEL `ModelMin`"
                 + " INPUT ( `i1` BOOL, )"
-                + " OUTPUT ( `o1` INT64, )"));
+                + " OUTPUT ( `o1` INT64, )"
+                + " CREATE MODEL `ModelStruct`"
+                + " INPUT ( `i1` STRUCT<a BOOL>, )"
+                + " OUTPUT ( `o1` STRUCT<a BOOL, b ARRAY<STRUCT<c STRING(MAX), d ARRAY<FLOAT64>>>, e STRUCT<f STRUCT<g INT64>>>, )"));
   }
 
   @Test
@@ -832,7 +933,7 @@ public class AvroSchemaToDdlConverterTest {
     assertEquals(
         Type.int64(), avroSchemaToDdlConverter.inferType(Schema.create(Schema.Type.LONG), false));
     assertEquals(
-        Type.float64(),
+        Type.float32(),
         avroSchemaToDdlConverter.inferType(Schema.create(Schema.Type.FLOAT), false));
     assertEquals(
         Type.float64(),
@@ -860,7 +961,7 @@ public class AvroSchemaToDdlConverterTest {
     assertEquals(
         Type.pgInt8(), avroSchemaToDdlConverter.inferType(Schema.create(Schema.Type.LONG), false));
     assertEquals(
-        Type.pgFloat8(),
+        Type.pgFloat4(),
         avroSchemaToDdlConverter.inferType(Schema.create(Schema.Type.FLOAT), false));
     assertEquals(
         Type.pgFloat8(),

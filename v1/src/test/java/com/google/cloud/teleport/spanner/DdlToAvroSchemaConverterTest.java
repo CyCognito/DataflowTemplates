@@ -19,6 +19,7 @@ import static com.google.cloud.teleport.spanner.AvroUtil.DEFAULT_EXPRESSION;
 import static com.google.cloud.teleport.spanner.AvroUtil.GENERATION_EXPRESSION;
 import static com.google.cloud.teleport.spanner.AvroUtil.GOOGLE_FORMAT_VERSION;
 import static com.google.cloud.teleport.spanner.AvroUtil.GOOGLE_STORAGE;
+import static com.google.cloud.teleport.spanner.AvroUtil.HIDDEN;
 import static com.google.cloud.teleport.spanner.AvroUtil.INPUT;
 import static com.google.cloud.teleport.spanner.AvroUtil.NOT_NULL;
 import static com.google.cloud.teleport.spanner.AvroUtil.OUTPUT;
@@ -51,6 +52,7 @@ import static org.junit.Assert.assertThat;
 import com.google.cloud.spanner.Dialect;
 import com.google.cloud.teleport.spanner.common.NumericUtils;
 import com.google.cloud.teleport.spanner.common.Type;
+import com.google.cloud.teleport.spanner.common.Type.StructField;
 import com.google.cloud.teleport.spanner.ddl.Ddl;
 import com.google.cloud.teleport.spanner.ddl.View;
 import com.google.common.collect.ImmutableList;
@@ -59,6 +61,7 @@ import java.util.Iterator;
 import java.util.List;
 import org.apache.avro.LogicalTypes;
 import org.apache.avro.Schema;
+import org.apache.avro.SchemaBuilder;
 import org.junit.Test;
 
 /** Test for {@link DdlToAvroSchemaConverter}. */
@@ -112,12 +115,21 @@ public class DdlToAvroSchemaConverterTest {
             .generatedAs("MOD(id+1, 64)")
             .stored()
             .endColumn()
+            .column("MyTokens")
+            .tokenlist()
+            .isHidden(true)
+            .generatedAs("(TOKENIZE_FULLTEXT(MyData))")
+            .endColumn()
             .primaryKey()
             .asc("id")
             .asc("gen_id")
             .desc("last_name")
             .end()
-            .indexes(ImmutableList.of("CREATE INDEX `UsersByFirstName` ON `Users` (`first_name`)"))
+            .indexes(
+                ImmutableList.of(
+                    "CREATE INDEX `UsersByFirstName` ON `Users` (`first_name`)",
+                    "CREATE SEARCH INDEX `SearchIndex` ON `Users` (`MyTokens`)"
+                        + " OPTIONS (sort_order_sharding=TRUE)"))
             .foreignKeys(
                 ImmutableList.of(
                     "ALTER TABLE `Users` ADD CONSTRAINT `fk` FOREIGN KEY (`first_name`)"
@@ -140,7 +152,7 @@ public class DdlToAvroSchemaConverterTest {
 
     List<Schema.Field> fields = avroSchema.getFields();
 
-    assertThat(fields, hasSize(5));
+    assertThat(fields, hasSize(6));
 
     assertThat(fields.get(0).name(), equalTo("id"));
     // Not null
@@ -185,6 +197,16 @@ public class DdlToAvroSchemaConverterTest {
     assertThat(fields.get(4).getProp(STORED), equalTo("true"));
     assertThat(fields.get(4).getProp(DEFAULT_EXPRESSION), equalTo(null));
 
+    assertThat(fields.get(5).name(), equalTo("MyTokens"));
+    assertThat(fields.get(5).schema(), equalTo(Schema.create(Schema.Type.NULL)));
+    assertThat(fields.get(5).getProp(SQL_TYPE), equalTo("TOKENLIST"));
+    assertThat(fields.get(5).getProp(NOT_NULL), equalTo("false"));
+    assertThat(fields.get(5).getProp(STORED), equalTo("false"));
+    assertThat(fields.get(5).getProp(HIDDEN), equalTo("true"));
+    assertThat(
+        fields.get(5).getProp(GENERATION_EXPRESSION), equalTo("(TOKENIZE_FULLTEXT(MyData))"));
+    assertThat(fields.get(5).getProp(DEFAULT_EXPRESSION), equalTo(null));
+
     // spanner pk
     assertThat(avroSchema.getProp(SPANNER_PRIMARY_KEY + "_0"), equalTo("`id` ASC"));
     assertThat(avroSchema.getProp(SPANNER_PRIMARY_KEY + "_1"), equalTo("`gen_id` ASC"));
@@ -195,6 +217,11 @@ public class DdlToAvroSchemaConverterTest {
     assertThat(
         avroSchema.getProp(SPANNER_INDEX + "0"),
         equalTo("CREATE INDEX `UsersByFirstName` ON `Users` (`first_name`)"));
+    assertThat(
+        avroSchema.getProp(SPANNER_INDEX + "1"),
+        equalTo(
+            "CREATE SEARCH INDEX `SearchIndex` ON `Users` (`MyTokens`)"
+                + " OPTIONS (sort_order_sharding=TRUE)"));
     assertThat(
         avroSchema.getProp(SPANNER_FOREIGN_KEY + "0"),
         equalTo(
@@ -593,6 +620,18 @@ public class DdlToAvroSchemaConverterTest {
             .column("arr_json_field")
             .type(Type.array(Type.json()))
             .endColumn()
+            .column("proto_field")
+            .type(Type.proto("com.google.cloud.teleport.spanner.tests.TestMessage"))
+            .endColumn()
+            .column("arr_proto_field")
+            .type(Type.array(Type.proto("com.google.cloud.teleport.spanner.tests.TestMessage")))
+            .endColumn()
+            .column("enum_field")
+            .type(Type.protoEnum("com.google.cloud.teleport.spanner.tests.TestEnum"))
+            .endColumn()
+            .column("arr_enum_field")
+            .type(Type.array(Type.protoEnum("com.google.cloud.teleport.spanner.tests.TestEnum")))
+            .endColumn()
             .primaryKey()
             .asc("bool_field")
             .end()
@@ -611,7 +650,7 @@ public class DdlToAvroSchemaConverterTest {
 
     List<Schema.Field> fields = avroSchema.getFields();
 
-    assertThat(fields, hasSize(18));
+    assertThat(fields, hasSize(22));
 
     assertThat(fields.get(0).name(), equalTo("bool_field"));
     assertThat(fields.get(0).schema(), equalTo(nullableUnion(Schema.Type.BOOLEAN)));
@@ -684,6 +723,30 @@ public class DdlToAvroSchemaConverterTest {
     assertThat(fields.get(17).name(), equalTo("arr_json_field"));
     assertThat(fields.get(17).schema(), equalTo(nullableArray(Schema.Type.STRING)));
     assertThat(fields.get(17).getProp(SQL_TYPE), equalTo("ARRAY<JSON>"));
+
+    assertThat(fields.get(18).name(), equalTo("proto_field"));
+    assertThat(fields.get(18).schema(), equalTo(nullableUnion(Schema.Type.BYTES)));
+    assertThat(
+        fields.get(18).getProp(SQL_TYPE),
+        equalTo("PROTO<com.google.cloud.teleport.spanner.tests.TestMessage>"));
+
+    assertThat(fields.get(19).name(), equalTo("arr_proto_field"));
+    assertThat(fields.get(19).schema(), equalTo(nullableArray(Schema.Type.BYTES)));
+    assertThat(
+        fields.get(19).getProp(SQL_TYPE),
+        equalTo("ARRAY<PROTO<com.google.cloud.teleport.spanner.tests.TestMessage>>"));
+
+    assertThat(fields.get(20).name(), equalTo("enum_field"));
+    assertThat(fields.get(20).schema(), equalTo(nullableUnion(Schema.Type.LONG)));
+    assertThat(
+        fields.get(20).getProp(SQL_TYPE),
+        equalTo("ENUM<com.google.cloud.teleport.spanner.tests.TestEnum>"));
+
+    assertThat(fields.get(21).name(), equalTo("arr_enum_field"));
+    assertThat(fields.get(21).schema(), equalTo(nullableArray(Schema.Type.LONG)));
+    assertThat(
+        fields.get(21).getProp(SQL_TYPE),
+        equalTo("ARRAY<ENUM<com.google.cloud.teleport.spanner.tests.TestEnum>>"));
 
     assertThat(avroSchema.getProp(SPANNER_PRIMARY_KEY + "_0"), equalTo("`bool_field` ASC"));
     assertThat(avroSchema.getProp(SPANNER_PARENT), equalTo("ParentTable"));
@@ -992,10 +1055,40 @@ public class DdlToAvroSchemaConverterTest {
             .size(-1)
             .endOutputColumn()
             .endModel()
+            .createModel("ModelStruct")
+            .inputColumn("i1")
+            .type(Type.struct(StructField.of("a", Type.bool())))
+            .size(-1)
+            .endInputColumn()
+            .outputColumn("o1")
+            .type(
+                Type.struct(
+                    ImmutableList.of(
+                        StructField.of("a", Type.bool()),
+                        StructField.of(
+                            "b",
+                            Type.array(
+                                Type.struct(
+                                    ImmutableList.of(
+                                        StructField.of("c", Type.string()),
+                                        StructField.of("d", Type.array(Type.float64())))))),
+                        StructField.of(
+                            "e",
+                            Type.struct(
+                                ImmutableList.of(
+                                    StructField.of(
+                                        "f",
+                                        Type.struct(
+                                            ImmutableList.of(
+                                                StructField.of("g", Type.int64()))))))))))
+            .size(-1)
+            .endOutputColumn()
+            .remote(false)
+            .endModel()
             .build();
 
     Collection<Schema> result = converter.convert(ddl);
-    assertThat(result, hasSize(2));
+    assertThat(result, hasSize(3));
 
     Iterator<Schema> iterator = result.iterator();
     Schema s = iterator.next();
@@ -1055,12 +1148,87 @@ public class DdlToAvroSchemaConverterTest {
     assertThat(s.getProp(SPANNER_REMOTE), equalTo("false"));
     assertThat(s.getFields(), hasSize(2));
     assertThat(s.getFields().get(0).name(), equalTo(INPUT));
-    ;
     assertThat(s.getFields().get(0).schema().getType(), equalTo(Schema.Type.RECORD));
     assertThat(s.getFields().get(0).schema().getFields(), hasSize(1));
     assertThat(s.getFields().get(1).name(), equalTo(OUTPUT));
     assertThat(s.getFields().get(1).schema().getType(), equalTo(Schema.Type.RECORD));
     assertThat(s.getFields().get(0).schema().getFields(), hasSize(1));
+
+    s = iterator.next();
+    assertThat(s.getName(), equalTo("ModelStruct"));
+    assertThat(s.getFields().get(0).name(), equalTo(INPUT));
+    assertThat(s.getFields().get(0).schema().getType(), equalTo(Schema.Type.RECORD));
+    assertThat(s.getFields().get(0).schema().getFields(), hasSize(1));
+    assertThat(s.getFields().get(0).schema().getFields().get(0).name(), equalTo("i1"));
+    assertThat(
+        s.getFields().get(0).schema().getFields().get(0).schema(),
+        equalTo(
+            SchemaBuilder.builder()
+                .record("struct_ModelStruct_input_0")
+                .fields()
+                .name("a")
+                .type()
+                .booleanType()
+                .noDefault()
+                .endRecord()));
+    assertThat(s.getFields().get(1).name(), equalTo(OUTPUT));
+    assertThat(s.getFields().get(1).schema().getType(), equalTo(Schema.Type.RECORD));
+    assertThat(s.getFields().get(1).schema().getFields(), hasSize(1));
+    assertThat(s.getFields().get(1).schema().getFields().get(0).name(), equalTo("o1"));
+    assertThat(
+        s.getFields().get(1).schema().getFields().get(0).schema().toString(),
+        equalTo(
+            SchemaBuilder.builder() //
+                .record("struct_ModelStruct_output_0")
+                .fields()
+                .name("a")
+                .type()
+                .booleanType()
+                .noDefault() //
+                .name("b")
+                .type()
+                .array()
+                .items()
+                .unionOf()
+                .nullType()
+                .and()
+                .record("struct_ModelStruct_output_0_1")
+                .fields()
+                .name("c")
+                .type()
+                .stringType()
+                .noDefault()
+                .name("d")
+                .type()
+                .array()
+                .items()
+                .unionOf()
+                .nullType()
+                .and()
+                .doubleType()
+                .endUnion()
+                .noDefault()
+                .endRecord()
+                .endUnion()
+                .noDefault()
+                .name("e")
+                .type()
+                .record("struct_ModelStruct_output_0_2")
+                .fields()
+                .name("f")
+                .type()
+                .record("struct_ModelStruct_output_0_2_0")
+                .fields()
+                .name("g")
+                .type()
+                .longType()
+                .noDefault()
+                .endRecord()
+                .noDefault()
+                .endRecord()
+                .noDefault()
+                .endRecord()
+                .toString()));
 
     assertThat(iterator.hasNext(), equalTo(false));
   }

@@ -26,6 +26,7 @@ import com.google.pubsub.v1.TopicName;
 import java.io.IOException;
 import java.text.ParseException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.function.Function;
 import org.apache.beam.it.common.PipelineLauncher.LaunchConfig;
@@ -94,6 +95,17 @@ public class PubsubToPubsubLT extends TemplateLoadTestBase {
   public void testSteadyState1hrUsingRunnerV2()
       throws IOException, ParseException, InterruptedException {
     testSteadyState1hr(this::enableRunnerV2);
+  }
+
+  @Test
+  public void testSteadyState1hrUsingAtLeastOnceMode()
+      throws ParseException, IOException, InterruptedException {
+    ArrayList<String> experiments = new ArrayList<>();
+    experiments.add("streaming_mode_at_least_once");
+    testSteadyState1hr(
+        b ->
+            b.addEnvironment("additionalExperiments", experiments)
+                .addEnvironment("enableStreamingEngine", true));
   }
 
   public void testBacklog(Function<LaunchConfig.Builder, LaunchConfig.Builder> paramsAdder)
@@ -183,7 +195,7 @@ public class PubsubToPubsubLT extends TemplateLoadTestBase {
     LaunchInfo info = pipelineLauncher.launch(project, region, options);
     assertThatPipeline(info).isRunning();
     // ElementCount metric in dataflow is approximate, allow for 1% difference
-    Integer expectedMessages = (int) (dataGenerator.execute(Duration.ofMinutes(60)) * 0.99);
+    Long expectedMessages = (long) (dataGenerator.execute(Duration.ofMinutes(60)) * 0.99);
     Result result =
         pipelineOperator.waitForConditionAndCancel(
             createConfig(info, Duration.ofMinutes(20)),

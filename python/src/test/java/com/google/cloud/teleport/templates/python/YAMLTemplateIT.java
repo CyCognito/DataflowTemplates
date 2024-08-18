@@ -28,11 +28,13 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 import org.apache.beam.it.common.PipelineLauncher;
 import org.apache.beam.it.common.PipelineOperator;
 import org.apache.beam.it.gcp.TemplateTestBase;
 import org.apache.beam.it.gcp.artifacts.Artifact;
+import org.apache.parquet.Strings;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -46,18 +48,33 @@ import org.junit.runners.JUnit4;
 public final class YAMLTemplateIT extends TemplateTestBase {
 
   @Test
-  public void testSimpleComposite() throws IOException {
+  public void testSimpleCompositeSpec() throws IOException {
     // Arrange
-    String yamlMessage =
-        Files.readString(Paths.get(Resources.getResource("YamlTemplateIT.yaml").getPath()));
-    yamlMessage = yamlMessage.replaceAll("INPUT_PATH", getGcsBasePath() + "/input/test.csv");
-    yamlMessage = yamlMessage.replaceAll("OUTPUT_PATH", getGcsBasePath() + "/output");
-
-    gcsClient.createArtifact("input/test.csv", "num\n0\n1\n2\n4");
-    gcsClient.createArtifact("input/simple.yaml", yamlMessage);
+    String yamlMessage = createSimpleYamlMessage();
 
     // Act
-    runYamlTemplateTest("input/simple.yaml");
+    testSimpleComposite(params -> params.addParameter("yaml_pipeline", yamlMessage));
+  }
+
+  @Test
+  public void testSimpleCompositeSpecFile() throws IOException {
+    // Arrange
+    gcsClient.createArtifact("input/simple.yaml", createSimpleYamlMessage());
+
+    // Act
+    testSimpleComposite(
+        params -> params.addParameter("yaml_pipeline_file", getGcsPath("input/simple.yaml")));
+  }
+
+  private void testSimpleComposite(
+      Function<PipelineLauncher.LaunchConfig.Builder, PipelineLauncher.LaunchConfig.Builder>
+          paramsAdder)
+      throws IOException {
+    // Arrange
+    gcsClient.createArtifact("input/test.csv", "num\n0\n1\n2\n4");
+
+    // Act
+    runYamlTemplateTest(paramsAdder);
 
     // Assert
     List<Artifact> goodArtifacts = gcsClient.listArtifacts("output/good-", Pattern.compile(".*"));
@@ -81,11 +98,36 @@ public final class YAMLTemplateIT extends TemplateTestBase {
     assertThat(badRecords).contains(divError);
   }
 
-  private void runYamlTemplateTest(String yamlGcsPath) throws IOException {
+  private String createSimpleYamlMessage() throws IOException {
+    return Files.readString(Paths.get(Resources.getResource("YamlTemplateIT.yaml").getPath()));
+  }
+
+  private void runYamlTemplateTest(
+      Function<PipelineLauncher.LaunchConfig.Builder, PipelineLauncher.LaunchConfig.Builder>
+          paramsAdder)
+      throws IOException {
+    boolean useStagedJars = !Strings.isNullOrEmpty(System.getProperty("beamMavenRepo"));
     // Arrange
+    String inputPath = getGcsBasePath() + "/input/test.csv";
+    String outputPath = getGcsBasePath() + "/output";
     PipelineLauncher.LaunchConfig.Builder options =
-        PipelineLauncher.LaunchConfig.builder(testName, specPath)
-            .addParameter("yaml", getGcsPath(yamlGcsPath));
+        paramsAdder.apply(
+            PipelineLauncher.LaunchConfig.builder(testName, specPath)
+                .addParameter(
+                    "jinja_variables",
+                    String.format(
+                        "{"
+                            + "\"INPUT_PATH_PARAM\": \"%s\", "
+                            + "\"OUTPUT_PATH_PARAM\": \"%s\", "
+                            + "\"USE_STAGED_JARS\": \"%s\", "
+                            + "\"BEAM_VERSION\": \"%s\", "
+                            + "\"BEAM_MAVEN_REPO\": \"%s\""
+                            + "}",
+                        inputPath,
+                        outputPath,
+                        useStagedJars,
+                        System.getProperty("beamJavaVersion"),
+                        System.getProperty("beamMavenRepo"))));
 
     // Act
     PipelineLauncher.LaunchInfo info = launchTemplate(options);

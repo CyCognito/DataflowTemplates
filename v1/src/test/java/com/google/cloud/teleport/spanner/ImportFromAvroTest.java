@@ -26,6 +26,10 @@ import com.google.cloud.teleport.spanner.ddl.Ddl;
 import com.google.cloud.teleport.spanner.ddl.InformationSchemaScanner;
 import com.google.cloud.teleport.spanner.proto.ExportProtos;
 import com.google.cloud.teleport.spanner.proto.ExportProtos.ProtoDialect;
+import com.google.common.collect.ImmutableList;
+import com.google.protobuf.ByteString;
+import com.google.protobuf.DescriptorProtos.FileDescriptorProto;
+import com.google.protobuf.DescriptorProtos.FileDescriptorSet;
 import com.google.protobuf.util.JsonFormat;
 import java.io.File;
 import java.nio.ByteBuffer;
@@ -270,8 +274,8 @@ public class ImportFromAvroTest {
   }
 
   @Test
-  public void floats() throws Exception {
-    SchemaBuilder.RecordBuilder<Schema> record = SchemaBuilder.record("floats");
+  public void float64s() throws Exception {
+    SchemaBuilder.RecordBuilder<Schema> record = SchemaBuilder.record("float64s");
     SchemaBuilder.FieldAssembler<Schema> fieldAssembler = record.fields();
 
     fieldAssembler
@@ -338,8 +342,8 @@ public class ImportFromAvroTest {
   }
 
   @Test
-  public void pgFloats() throws Exception {
-    SchemaBuilder.RecordBuilder<Schema> record = SchemaBuilder.record("floats");
+  public void pgFloat64s() throws Exception {
+    SchemaBuilder.RecordBuilder<Schema> record = SchemaBuilder.record("float64s");
     SchemaBuilder.FieldAssembler<Schema> fieldAssembler = record.fields();
 
     fieldAssembler
@@ -402,6 +406,111 @@ public class ImportFromAvroTest {
                 .set("required_double", 3.16)
                 .set("optional_string_double", "100.301")
                 .set("required_string_double", "1.1e-3")
+                .build()),
+        Dialect.POSTGRESQL);
+  }
+
+  @Test
+  public void float32s() throws Exception {
+    SchemaBuilder.RecordBuilder<Schema> record = SchemaBuilder.record("float32s");
+    SchemaBuilder.FieldAssembler<Schema> fieldAssembler = record.fields();
+
+    fieldAssembler
+        // Primary key.
+        .requiredLong("id")
+        // Integer columns.
+        .optionalInt("optional_int")
+        .requiredInt("required_int")
+        // Floating columns
+        .optionalFloat("optional_float")
+        .requiredFloat("required_float")
+        .optionalString("optional_string_float")
+        .requiredString("required_string_float");
+    Schema schema = fieldAssembler.endRecord();
+    String spannerSchema =
+        "CREATE TABLE `AvroTable` ("
+            + "`id`                                    INT64 NOT NULL,"
+            + "`optional_int`                          FLOAT32,"
+            + "`required_int`                          FLOAT32 NOT NULL,"
+            + "`optional_float`                        FLOAT32,"
+            + "`required_float`                        FLOAT32 NOT NULL,"
+            + "`optional_string_float`                 FLOAT32,"
+            + "`required_string_float`                 FLOAT32 NOT NULL,"
+            + ") PRIMARY KEY (`id`)";
+
+    runTest(
+        schema,
+        spannerSchema,
+        Arrays.asList(
+            new GenericRecordBuilder(schema)
+                .set("id", 1L)
+                .set("optional_int", 1)
+                .set("required_int", 4)
+                .set("optional_float", 2.3f)
+                .set("required_float", 3.4f)
+                .set("optional_string_float", "100.30")
+                .set("required_string_float", "0.1e-3")
+                .build(),
+            new GenericRecordBuilder(schema)
+                .set("id", 2L)
+                .set("optional_int", 10)
+                .set("required_int", 40)
+                .set("optional_float", 2.03f)
+                .set("required_float", 3.14f)
+                .set("optional_string_float", "100.301")
+                .set("required_string_float", "1.1e-3")
+                .build()));
+  }
+
+  @Test
+  public void pgFloat32s() throws Exception {
+    SchemaBuilder.RecordBuilder<Schema> record = SchemaBuilder.record("float32s");
+    SchemaBuilder.FieldAssembler<Schema> fieldAssembler = record.fields();
+
+    fieldAssembler
+        // Primary key.
+        .requiredLong("id")
+        // Integer columns.
+        .optionalInt("optional_int")
+        .requiredInt("required_int")
+        // Floating columns
+        .optionalFloat("optional_float")
+        .requiredFloat("required_float")
+        .optionalString("optional_string_float")
+        .requiredString("required_string_float");
+    Schema schema = fieldAssembler.endRecord();
+    String spannerSchema =
+        "CREATE TABLE \"AvroTable\" ("
+            + "\"id\"                                    bigint NOT NULL,"
+            + "\"optional_int\"                          real,"
+            + "\"required_int\"                          real NOT NULL,"
+            + "\"optional_float\"                        real,"
+            + "\"required_float\"                        real NOT NULL,"
+            + "\"optional_string_float\"                 real,"
+            + "\"required_string_float\"                 real NOT NULL,"
+            + " PRIMARY KEY (\"id\"))";
+
+    runTest(
+        schema,
+        spannerSchema,
+        Arrays.asList(
+            new GenericRecordBuilder(schema)
+                .set("id", 1L)
+                .set("optional_int", 1)
+                .set("required_int", 4)
+                .set("optional_float", 2.3f)
+                .set("required_float", 3.4f)
+                .set("optional_string_float", "100.30")
+                .set("required_string_float", "0.1e-3")
+                .build(),
+            new GenericRecordBuilder(schema)
+                .set("id", 2L)
+                .set("optional_int", 10)
+                .set("required_int", 40)
+                .set("optional_float", 2.03f)
+                .set("required_float", 3.14f)
+                .set("optional_string_float", "100.301")
+                .set("required_string_float", "1.1e-3")
                 .build()),
         Dialect.POSTGRESQL);
   }
@@ -979,15 +1088,15 @@ public class ImportFromAvroTest {
 
   @Test
   public void models() throws Exception {
-    String endpoint =
-        "//aiplatform.googleapis.com/projects/span-cloud-testing/locations/us-central1/endpoints/4608339105032437760";
     Map<String, Schema> avroFiles = new HashMap<>();
     avroFiles.put(
         "ModelAll.avro",
         SchemaBuilder.record("Iris")
             .prop("spannerEntity", "Model")
             .prop("spannerRemote", "true")
-            .prop("spannerOption_0", "endpoint=\"" + endpoint + "\"")
+            .prop(
+                "spannerOption_0",
+                "endpoint=\"//aiplatform.googleapis.com/projects/span-cloud-testing/locations/us-central1/endpoints/4608339105032437760\"")
             .fields()
             // Input columns.
             .name("Input")
@@ -1034,6 +1143,68 @@ public class ImportFromAvroTest {
             .array()
             .items()
             .longType()
+            .noDefault()
+            .endRecord()
+            .noDefault()
+            .endRecord());
+    avroFiles.put(
+        "ModelStruct.avro",
+        SchemaBuilder.record("TextEmbeddingGecko")
+            .prop("spannerEntity", "Model")
+            .prop("spannerRemote", "true")
+            .prop(
+                "spannerOption_0",
+                "endpoint=\"//aiplatform.googleapis.com/projects/span-cloud-testing/locations/us-central1/publishers/google/models/textembedding-gecko\"")
+            .fields()
+            // Input columns.
+            .name("Input")
+            .type()
+            .record("TextEmbeddingGecko_Input")
+            .fields()
+            .name("content")
+            .prop("sqlType", "STRING(MAX)")
+            .type()
+            .stringType()
+            .noDefault()
+            .endRecord()
+            .noDefault()
+            // Output columns.
+            .name("Output")
+            .type()
+            .record("TextEmbeddingGecko_Output")
+            .fields()
+            .name("embeddings")
+            .prop(
+                "sqlType",
+                "STRUCT<statistics STRUCT<truncated BOOL, token_count FLOAT64>, values ARRAY<FLOAT64>>")
+            .type()
+            .record("struct_ModelStruct_output_0")
+            .fields()
+            .name("statistics")
+            .type()
+            .record("struct_ModelStruct_output_0_1")
+            .fields()
+            .name("truncated")
+            .type()
+            .booleanType()
+            .noDefault()
+            .name("token_count")
+            .type()
+            .doubleType()
+            .noDefault()
+            .endRecord()
+            .noDefault()
+            .name("values")
+            .type()
+            .array()
+            .items()
+            .unionOf()
+            .nullType()
+            .and()
+            .doubleType()
+            .endUnion()
+            .noDefault()
+            .endRecord()
             .noDefault()
             .endRecord()
             .noDefault()
@@ -1101,9 +1272,11 @@ public class ImportFromAvroTest {
                 + " CREATE MODEL `Iris`"
                 + " INPUT ( `f1` FLOAT64, `f2` FLOAT64, `f3` FLOAT64, `f4` FLOAT64, )"
                 + " OUTPUT ( `classes` ARRAY<STRING(MAX)>, `scores` ARRAY<FLOAT64>, )"
-                + " REMOTE OPTIONS (endpoint=\""
-                + endpoint
-                + "\")"));
+                + " REMOTE OPTIONS (endpoint=\"//aiplatform.googleapis.com/projects/span-cloud-testing/locations/us-central1/endpoints/4608339105032437760\")"
+                + " CREATE MODEL `TextEmbeddingGecko`"
+                + " INPUT ( `content` STRING(MAX), )"
+                + " OUTPUT ( `embeddings` STRUCT<statistics STRUCT<truncated BOOL, token_count FLOAT64>, values ARRAY<FLOAT64>>, )"
+                + " REMOTE OPTIONS (endpoint=\"//aiplatform.googleapis.com/projects/span-cloud-testing/locations/us-central1/publishers/google/models/textembedding-gecko\")"));
   }
 
   @Test
@@ -1501,6 +1674,244 @@ public class ImportFromAvroTest {
                 + " DEFAULT nextval('\"PGSequence2\"'::text),\n\t"
                 + "\"c\"                                     bigint,"
                 + "\n\tPRIMARY KEY (\"id\")\n)\n\n"));
+  }
+
+  @Test
+  public void protoDescriptors() throws Exception {
+
+    SchemaBuilder.RecordBuilder<Schema> record = SchemaBuilder.record("T");
+    SchemaBuilder.FieldAssembler<Schema> fieldAssembler = record.fields();
+
+    fieldAssembler.requiredLong("id").optionalBoolean("c1").optionalLong("c2");
+    Schema tableSchema = fieldAssembler.endRecord();
+    Map<String, Schema> avroFiles = new HashMap<>();
+    avroFiles.put("CreateTable.avro", tableSchema);
+
+    FileDescriptorProto.Builder builder = FileDescriptorProto.newBuilder();
+    builder
+        .addMessageType(
+            com.google.cloud.teleport.spanner.tests.TestMessage.getDescriptor().toProto())
+        .addMessageType(com.google.cloud.teleport.spanner.tests.Order.getDescriptor().toProto())
+        .addEnumType(com.google.cloud.teleport.spanner.tests.TestEnum.getDescriptor().toProto());
+    FileDescriptorSet.Builder fileDescriptorSetBuilder = FileDescriptorSet.newBuilder();
+    fileDescriptorSetBuilder.addFile(builder);
+    ByteString protoDescriptorBytes = fileDescriptorSetBuilder.build().toByteString();
+
+    ExportProtos.Export.Builder exportProtoBuilder = ExportProtos.Export.newBuilder();
+    exportProtoBuilder.setProtoDescriptors(protoDescriptorBytes);
+    for (Entry<String, Schema> entry : avroFiles.entrySet()) {
+      String fileName = entry.getKey();
+      Schema schema = entry.getValue();
+      exportProtoBuilder.addTables(
+          ExportProtos.Export.Table.newBuilder()
+              .setName(schema.getName())
+              .addDataFiles(fileName)
+              .build());
+      // Create the Avro files to be imported.
+      File avroFile = tmpDir.newFile(fileName);
+      try (DataFileWriter<GenericRecord> fileWriter =
+          new DataFileWriter<>(new GenericDatumWriter<>(schema))) {
+        fileWriter.create(schema, avroFile);
+      }
+    }
+
+    // Create the database manifest file.
+    ExportProtos.Export exportProto = exportProtoBuilder.build();
+    File manifestFile = tmpDir.newFile("spanner-export.json");
+    String manifestFileLocation = manifestFile.getParent();
+    Files.write(
+        manifestFile.toPath(),
+        JsonFormat.printer().print(exportProto).getBytes(StandardCharsets.UTF_8));
+
+    // Create the target database.
+
+    spannerServer.createDatabase(dbName, Arrays.asList());
+
+    // Run the import pipeline.
+    importPipeline.apply(
+        "Import",
+        new ImportTransform(
+            spannerServer.getSpannerConfig(dbName),
+            ValueProvider.StaticValueProvider.of(manifestFileLocation),
+            ValueProvider.StaticValueProvider.of(true),
+            ValueProvider.StaticValueProvider.of(true),
+            ValueProvider.StaticValueProvider.of(true),
+            ValueProvider.StaticValueProvider.of(true),
+            ValueProvider.StaticValueProvider.of(true),
+            ValueProvider.StaticValueProvider.of(30)));
+    PipelineResult importResult = importPipeline.run();
+    importResult.waitUntilFinish();
+  }
+
+  @Test
+  public void protoBundle() throws Exception {
+
+    SchemaBuilder.RecordBuilder<Schema> record = SchemaBuilder.record("T");
+    SchemaBuilder.FieldAssembler<Schema> fieldAssembler = record.fields();
+
+    fieldAssembler.requiredLong("id").optionalBoolean("c1").optionalLong("c2");
+    Schema tableSchema = fieldAssembler.endRecord();
+    Map<String, Schema> avroFiles = new HashMap<>();
+    avroFiles.put("CreateTable.avro", tableSchema);
+
+    FileDescriptorSet.Builder fileDescriptorSetBuilder = FileDescriptorSet.newBuilder();
+    fileDescriptorSetBuilder.addFile(
+        com.google.cloud.teleport.spanner.tests.TestMessage.getDescriptor().getFile().toProto());
+    ByteString protoDescriptorBytes = fileDescriptorSetBuilder.build().toByteString();
+    ImmutableList<String> protoBundle =
+        ImmutableList.of(
+            "com.google.cloud.teleport.spanner.tests.TestMessage",
+            "com.google.cloud.teleport.spanner.tests.Order",
+            "com.google.cloud.teleport.spanner.tests.TestEnum");
+
+    ExportProtos.Export.Builder exportProtoBuilder = ExportProtos.Export.newBuilder();
+    exportProtoBuilder.setProtoDescriptors(protoDescriptorBytes);
+    exportProtoBuilder.addAllProtoBundle(protoBundle);
+    for (Entry<String, Schema> entry : avroFiles.entrySet()) {
+      String fileName = entry.getKey();
+      Schema schema = entry.getValue();
+      exportProtoBuilder.addTables(
+          ExportProtos.Export.Table.newBuilder()
+              .setName(schema.getName())
+              .addDataFiles(fileName)
+              .build());
+      // Create the Avro files to be imported.
+      File avroFile = tmpDir.newFile(fileName);
+      try (DataFileWriter<GenericRecord> fileWriter =
+          new DataFileWriter<>(new GenericDatumWriter<>(schema))) {
+        fileWriter.create(schema, avroFile);
+      }
+    }
+
+    // Create the database manifest file.
+    ExportProtos.Export exportProto = exportProtoBuilder.build();
+    File manifestFile = tmpDir.newFile("spanner-export.json");
+    String manifestFileLocation = manifestFile.getParent();
+    Files.write(
+        manifestFile.toPath(),
+        JsonFormat.printer().print(exportProto).getBytes(StandardCharsets.UTF_8));
+
+    // Create the target database.
+    spannerServer.createDatabase(dbName, Arrays.asList());
+
+    // Run the import pipeline.
+    importPipeline.apply(
+        "Import",
+        new ImportTransform(
+            spannerServer.getSpannerConfig(dbName),
+            ValueProvider.StaticValueProvider.of(manifestFileLocation),
+            ValueProvider.StaticValueProvider.of(true),
+            ValueProvider.StaticValueProvider.of(true),
+            ValueProvider.StaticValueProvider.of(true),
+            ValueProvider.StaticValueProvider.of(true),
+            ValueProvider.StaticValueProvider.of(true),
+            ValueProvider.StaticValueProvider.of(30)));
+    PipelineResult importResult = importPipeline.run();
+    importResult.waitUntilFinish();
+
+    Ddl ddl;
+    try (ReadOnlyTransaction ctx = spannerServer.getDbClient(dbName).readOnlyTransaction()) {
+      ddl = new InformationSchemaScanner(ctx).scan();
+    }
+    assertThat(
+        ddl.prettyPrint(),
+        equalToCompressingWhiteSpace(
+            "\nCREATE PROTO BUNDLE ("
+                + "\n\t`com.google.cloud.teleport.spanner.tests.TestMessage`,"
+                + "\n\t`com.google.cloud.teleport.spanner.tests.Order`,"
+                + "\n\t`com.google.cloud.teleport.spanner.tests.TestEnum`,)"
+                + "CREATE TABLE `T` (\n\t"
+                + "`id`                                    INT64 NOT NULL, "
+                + "\n\t`c1`                                    BOOL,\n\t"
+                + "`c2`                                    INT64,\n) "
+                + "PRIMARY KEY ()\n\n"));
+  }
+
+  @Test
+  public void alterProtoBundle() throws Exception {
+
+    SchemaBuilder.RecordBuilder<Schema> record = SchemaBuilder.record("T");
+    SchemaBuilder.FieldAssembler<Schema> fieldAssembler = record.fields();
+
+    fieldAssembler.requiredLong("id").optionalBoolean("c1").optionalLong("c2");
+    Schema tableSchema = fieldAssembler.endRecord();
+    Map<String, Schema> avroFiles = new HashMap<>();
+    avroFiles.put("CreateTable.avro", tableSchema);
+
+    FileDescriptorSet.Builder fileDescriptorSetBuilder = FileDescriptorSet.newBuilder();
+    fileDescriptorSetBuilder.addFile(
+        com.google.cloud.teleport.spanner.tests.TestMessage.getDescriptor().getFile().toProto());
+    ByteString protoDescriptorBytes = fileDescriptorSetBuilder.build().toByteString();
+    ImmutableList<String> protoBundle =
+        ImmutableList.of(
+            "com.google.cloud.teleport.spanner.tests.TestMessage",
+            "com.google.cloud.teleport.spanner.tests.Order");
+
+    ExportProtos.Export.Builder exportProtoBuilder = ExportProtos.Export.newBuilder();
+    exportProtoBuilder.setProtoDescriptors(protoDescriptorBytes);
+    exportProtoBuilder.addAllProtoBundle(protoBundle);
+    for (Entry<String, Schema> entry : avroFiles.entrySet()) {
+      String fileName = entry.getKey();
+      Schema schema = entry.getValue();
+      exportProtoBuilder.addTables(
+          ExportProtos.Export.Table.newBuilder()
+              .setName(schema.getName())
+              .addDataFiles(fileName)
+              .build());
+      // Create the Avro files to be imported.
+      File avroFile = tmpDir.newFile(fileName);
+      try (DataFileWriter<GenericRecord> fileWriter =
+          new DataFileWriter<>(new GenericDatumWriter<>(schema))) {
+        fileWriter.create(schema, avroFile);
+      }
+    }
+
+    // Create the database manifest file.
+    ExportProtos.Export exportProto = exportProtoBuilder.build();
+    File manifestFile = tmpDir.newFile("spanner-export.json");
+    String manifestFileLocation = manifestFile.getParent();
+    Files.write(
+        manifestFile.toPath(),
+        JsonFormat.printer().print(exportProto).getBytes(StandardCharsets.UTF_8));
+
+    List<String> statements =
+        Arrays.asList(
+            "CREATE PROTO BUNDLE (" + "com.google.cloud.teleport.spanner.tests.TestEnum)");
+
+    // Create the target database.
+    spannerServer.createDatabase(dbName, statements, protoDescriptorBytes);
+
+    // Run the import pipeline.
+    importPipeline.apply(
+        "Import",
+        new ImportTransform(
+            spannerServer.getSpannerConfig(dbName),
+            ValueProvider.StaticValueProvider.of(manifestFileLocation),
+            ValueProvider.StaticValueProvider.of(true),
+            ValueProvider.StaticValueProvider.of(true),
+            ValueProvider.StaticValueProvider.of(true),
+            ValueProvider.StaticValueProvider.of(true),
+            ValueProvider.StaticValueProvider.of(true),
+            ValueProvider.StaticValueProvider.of(30)));
+    PipelineResult importResult = importPipeline.run();
+    importResult.waitUntilFinish();
+
+    Ddl ddl;
+    try (ReadOnlyTransaction ctx = spannerServer.getDbClient(dbName).readOnlyTransaction()) {
+      ddl = new InformationSchemaScanner(ctx).scan();
+    }
+    assertThat(
+        ddl.prettyPrint(),
+        equalToCompressingWhiteSpace(
+            "CREATE PROTO BUNDLE ("
+                + "\n\t`com.google.cloud.teleport.spanner.tests.TestMessage`,"
+                + "\n\t`com.google.cloud.teleport.spanner.tests.Order`,"
+                + "\n\t`com.google.cloud.teleport.spanner.tests.TestEnum`,)"
+                + "CREATE TABLE `T` (\n\t"
+                + "`id`                                    INT64 NOT NULL, "
+                + "\n\t`c1`                                    BOOL,\n\t"
+                + "`c2`                                    INT64,\n) "
+                + "PRIMARY KEY ()\n\n"));
   }
 
   private void runTest(Schema avroSchema, String spannerSchema, Iterable<GenericRecord> records)

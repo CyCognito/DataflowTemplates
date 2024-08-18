@@ -81,11 +81,11 @@ public class DataStreamToPostgres {
    * <p>Inherits standard configuration options.
    */
   public interface Options extends PipelineOptions, StreamingOptions {
-    @TemplateParameter.Text(
+    @TemplateParameter.GcsReadFile(
         order = 1,
+        groupName = "Source",
         description = "Cloud Storage Input File(s)",
         helpText = "Path of the file pattern glob to read from.",
-        regexes = {"^gs:\\/\\/[^\\n\\r]+$"},
         example = "gs://your-bucket/path/*.avro")
     String getInputFilePattern();
 
@@ -137,6 +137,7 @@ public class DataStreamToPostgres {
     // Postgres Connection Parameters
     @TemplateParameter.Text(
         order = 4,
+        groupName = "Target",
         description = "Database Host to connect on.",
         helpText = "Database Host to connect on.")
     String getDatabaseHost();
@@ -145,6 +146,7 @@ public class DataStreamToPostgres {
 
     @TemplateParameter.Text(
         order = 5,
+        groupName = "Target",
         optional = true,
         description = "Database Port to connect on.",
         helpText = "Database Port to connect on.")
@@ -173,6 +175,7 @@ public class DataStreamToPostgres {
 
     @TemplateParameter.Text(
         order = 12,
+        groupName = "Target",
         optional = true,
         description = "SQL Database Name.",
         helpText = "The database name to connect to.")

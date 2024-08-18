@@ -23,7 +23,9 @@ import com.google.api.services.dataflow.model.Job;
 import com.google.auth.Credentials;
 import com.google.cloud.bigquery.TableId;
 import com.google.cloud.teleport.metadata.DirectRunnerTest;
+import com.google.cloud.teleport.metadata.MultiTemplateIntegrationTest;
 import com.google.cloud.teleport.metadata.Template;
+import com.google.cloud.teleport.metadata.Template.TemplateType;
 import com.google.cloud.teleport.metadata.TemplateCreationParameter;
 import com.google.cloud.teleport.metadata.TemplateCreationParameters;
 import com.google.cloud.teleport.metadata.TemplateIntegrationTest;
@@ -99,7 +101,11 @@ public abstract class TemplateTestBase {
   protected static final String PROJECT = TestProperties.project();
   protected static final String REGION = TestProperties.region();
 
+  // Store the template spec path for staged template specified via @TemplateIntegrationTest.
   protected String specPath;
+  // Store the template spec paths for the staged templates specified via
+  // @MultiTemplateIntegrationTest.
+  protected List<String> multiTemplateSpecPaths;
   protected Credentials credentials;
   protected CredentialsProvider credentialsProvider;
   protected String artifactBucketName;
@@ -108,8 +114,17 @@ public abstract class TemplateTestBase {
   /** Cache to avoid staging the same template multiple times on the same execution. */
   private static final Cache<String, String> stagedTemplates = CacheBuilder.newBuilder().build();
 
+  // Template metadata used only for single template tests specified via @TemplateIntegrationTest.
   protected Template template;
+  // Template class used only for single template tests specified via @TemplateIntegrationTest.
   private Class<?> templateClass;
+
+  // Template metadata list used only for multi template tests specified via
+  // @MultiTemplateIntegrationTest.
+  protected List<Template> multiTemplates;
+  // Template class list used only for multi template tests specified via
+  // @MultiTemplateIntegrationTest.
+  protected List<Class<?>> multiTemplateClasses;
 
   /** Client to interact with GCS. */
   protected GcsResourceManager gcsClient;
@@ -118,6 +133,7 @@ public abstract class TemplateTestBase {
 
   private boolean usingDirectRunner;
   protected PipelineLauncher pipelineLauncher;
+  protected boolean skipBaseCleanup;
 
   @Before
   public void setUpBase() throws ExecutionException {
@@ -125,6 +141,8 @@ public abstract class TemplateTestBase {
     testId = PipelineUtils.createJobName("test", 10);
 
     TemplateIntegrationTest annotation = null;
+    MultiTemplateIntegrationTest multiAnnotation =
+        getClass().getAnnotation(MultiTemplateIntegrationTest.class);
     usingDirectRunner = System.getProperty("directRunnerTest") != null;
     try {
       Method testMethod = getClass().getMethod(testName);
@@ -140,20 +158,21 @@ public abstract class TemplateTestBase {
     if (annotation == null) {
       annotation = getClass().getAnnotation(TemplateIntegrationTest.class);
     }
-    if (annotation == null) {
+    if (annotation == null && multiAnnotation == null) {
       LOG.warn(
-          "{} did not specify which template is tested using @TemplateIntegrationTest, skipping.",
+          "{} did not specify which template is tested using @TemplateIntegrationTest or"
+              + " @MultiTemplateIntegrationTest, skipping.",
           getClass());
       return;
     }
-    templateClass = annotation.value();
-    template = getTemplateAnnotation(annotation, templateClass);
-    if (template == null) {
+    if (annotation != null && multiAnnotation != null) {
+      LOG.warn(
+          "{} specifies both @TemplateIntegrationTest or @MultiTemplateIntegrationTest, please use"
+              + " only of either.",
+          getClass());
       return;
     }
-    if (template.placeholderClass() != void.class) {
-      templateClass = template.placeholderClass();
-    }
+
     if (TestProperties.hasAccessToken()) {
       credentials = TestProperties.googleCredentials();
     } else {
@@ -179,79 +198,136 @@ public abstract class TemplateTestBase {
           "Both -DartifactBucket and -DstageBucket were not given. Storage Client will not be"
               + " created automatically.");
     }
-
     credentialsProvider = FixedCredentialsProvider.create(credentials);
-    pipelineLauncher = buildLauncher();
 
-    if (usingDirectRunner) {
-      // Using direct runner, not needed to stage.
-      return;
-    }
+    // If annotation is not null, that means single template tests are being run.
+    if (annotation != null) {
+      templateClass = annotation.value();
+      template = getTemplateAnnotation(annotation, templateClass);
+      if (template == null) {
+        return;
+      }
+      if (template.placeholderClass() != void.class) {
+        templateClass = template.placeholderClass();
+      }
+      pipelineLauncher = buildLauncher(templateClass, template);
 
-    if (TestProperties.specPath() != null && !TestProperties.specPath().isEmpty()) {
-      LOG.info("A spec path was given, not staging template {}", template.name());
-      specPath = TestProperties.specPath();
+      if (usingDirectRunner) {
+        // Using direct runner, not needed to stage.
+        return;
+      }
+      specPath = getSpecPath(templateClass, template, "pom.xml");
     } else {
-      specPath =
-          stagedTemplates.get(
-              template.name(),
-              () -> {
-                LOG.info("Preparing test for {} ({})", template.name(), templateClass);
+      // If multiAnnotation is not null, that means multi template tests are being run.
+      TemplateIntegrationTest[] templateIntegrationTests = multiAnnotation.value();
+      String[] pomPaths = multiAnnotation.pomPaths();
+      if (pomPaths.length != templateIntegrationTests.length) {
+        LOG.warn(
+            "@MultiTemplateIntegrationTest fields value and pomPaths specified in {} have unequal"
+                + " lengths. Every template class in value should have its corresponding pom file"
+                + " in pomPath at the same index.",
+            getClass());
+        return;
+      }
+      if (pomPaths.length == 0) {
+        LOG.warn(
+            "{} specifies @MultiTemplateIntegrationTest with empty pomPaths field. Please provide"
+                + " pomPaths for the corresponding templates to launch.",
+            getClass());
+        return;
+      }
+      for (int i = 0; i < templateIntegrationTests.length; i++) {
+        TemplateIntegrationTest templateIntegrationTest = templateIntegrationTests[i];
+        String pomPath = pomPaths[i];
+        templateClass = templateIntegrationTest.value();
+        template = getTemplateAnnotation(templateIntegrationTest, templateClass);
+        if (template == null) {
+          return;
+        }
+        if (template.placeholderClass() != void.class) {
+          templateClass = template.placeholderClass();
+        }
+        multiTemplates.add(template);
+        multiTemplateClasses.add(templateClass);
+        if (pipelineLauncher == null) {
+          pipelineLauncher = buildLauncher(templateClass, template);
+        }
 
-                String prefix =
-                    new SimpleDateFormat("yyyy-MM-dd-HH-mm-ss").format(new Date()) + "_IT";
+        if (usingDirectRunner) {
+          // Using direct runner, not needed to stage.
+          return;
+        }
+        multiTemplateSpecPaths.add(getSpecPath(templateClass, template, pomPath));
+      }
+    }
+  }
 
-                File pom = new File("pom.xml").getAbsoluteFile();
-                if (!pom.exists()) {
-                  throw new IllegalArgumentException(
-                      "To use tests staging templates, please run in the Maven module directory containing"
-                          + " the template.");
-                }
+  private String getSpecPath(
+      Class<?> dataflowTemplateClass, Template templateMetadata, String pomPath)
+      throws ExecutionException {
+    if (TestProperties.specPath() != null && !TestProperties.specPath().isEmpty()) {
+      LOG.info("A spec path was given, not staging template {}", templateMetadata.name());
+      return TestProperties.specPath();
+    } else {
+      return stagedTemplates.get(
+          templateMetadata.name(),
+          () -> {
+            LOG.info("Preparing test for {} ({})", templateMetadata.name(), dataflowTemplateClass);
 
-                // Use bucketName unless only artifactBucket is provided
-                String bucketName;
-                if (TestProperties.hasStageBucket()) {
-                  bucketName = TestProperties.stageBucket();
-                } else if (TestProperties.hasArtifactBucket()) {
-                  bucketName = TestProperties.artifactBucket();
-                  LOG.warn(
-                      "-DstageBucket was not specified, using -DartifactBucket ({}) for stage step",
-                      bucketName);
-                } else {
-                  throw new IllegalArgumentException(
-                      "-DstageBucket was not specified, so Template can not be staged. Either give a"
-                          + " -DspecPath or provide a proper -DstageBucket for automatic staging.");
-                }
+            String prefix = new SimpleDateFormat("yyyy-MM-dd-HH-mm-ss").format(new Date()) + "_IT";
 
-                String[] mavenCmd = buildMavenStageCommand(prefix, pom, bucketName);
-                LOG.info("Running command to stage templates: {}", String.join(" ", mavenCmd));
+            File pom = new File(pomPath).getAbsoluteFile();
+            if (!pom.exists()) {
+              throw new IllegalArgumentException(
+                  "To use tests staging templates, please run in the Maven module directory"
+                      + " containing the template.");
+            }
 
-                try {
-                  Process exec = Runtime.getRuntime().exec(mavenCmd);
-                  IORedirectUtil.redirectLinesLog(exec.getInputStream(), LOG);
-                  IORedirectUtil.redirectLinesLog(exec.getErrorStream(), LOG);
+            // Use bucketName unless only artifactBucket is provided
+            String bucketName;
+            if (TestProperties.hasStageBucket()) {
+              bucketName = TestProperties.stageBucket();
+            } else if (TestProperties.hasArtifactBucket()) {
+              bucketName = TestProperties.artifactBucket();
+              LOG.warn(
+                  "-DstageBucket was not specified, using -DartifactBucket ({}) for stage step",
+                  bucketName);
+            } else {
+              throw new IllegalArgumentException(
+                  "-DstageBucket was not specified, so Template can not be staged. Either give a"
+                      + " -DspecPath or provide a proper -DstageBucket for automatic staging.");
+            }
 
-                  if (exec.waitFor() != 0) {
-                    throw new RuntimeException("Error staging template, check Maven logs.");
-                  }
+            String[] mavenCmd = buildMavenStageCommand(prefix, pom, bucketName, template);
+            LOG.info("Running command to stage templates: {}", String.join(" ", mavenCmd));
 
-                  boolean flex =
-                      template.flexContainerName() != null
-                          && !template.flexContainerName().isEmpty();
-                  return String.format(
-                      "gs://%s/%s/%s%s", bucketName, prefix, flex ? "flex/" : "", template.name());
+            try {
+              Process exec = Runtime.getRuntime().exec(mavenCmd);
+              IORedirectUtil.redirectLinesLog(exec.getInputStream(), LOG);
+              IORedirectUtil.redirectLinesLog(exec.getErrorStream(), LOG);
 
-                } catch (Exception e) {
-                  throw new IllegalArgumentException("Error staging template", e);
-                }
-              });
+              if (exec.waitFor() != 0) {
+                throw new RuntimeException("Error staging template, check Maven logs.");
+              }
+
+              boolean flex =
+                  templateMetadata.flexContainerName() != null
+                      && !templateMetadata.flexContainerName().isEmpty();
+              return String.format(
+                  "gs://%s/%s/%s%s",
+                  bucketName, prefix, flex ? "flex/" : "", templateMetadata.name());
+
+            } catch (Exception e) {
+              throw new IllegalArgumentException("Error staging template", e);
+            }
+          });
     }
   }
 
   private Template getTemplateAnnotation(
-      TemplateIntegrationTest annotation, Class<?> templateClass) {
+      TemplateIntegrationTest annotation, Class<?> dataflowTemplateClass) {
     String templateName = annotation.template();
-    Template[] templateAnnotations = templateClass.getAnnotationsByType(Template.class);
+    Template[] templateAnnotations = dataflowTemplateClass.getAnnotationsByType(Template.class);
     if (templateAnnotations.length == 0) {
       throw new RuntimeException(
           String.format(
@@ -282,7 +358,8 @@ public abstract class TemplateTestBase {
    * It identifies whether the template is v1 (Classic) or v2 (Flex) to setup the Maven reactor
    * accordingly.
    */
-  private String[] buildMavenStageCommand(String prefix, File pom, String bucketName) {
+  private String[] buildMavenStageCommand(
+      String prefix, File pom, String bucketName, Template templateMetadata) {
     String pomPath = pom.getAbsolutePath();
     String moduleBuild;
 
@@ -301,6 +378,11 @@ public abstract class TemplateTestBase {
       moduleBuild = ".";
     }
 
+    // Skip shading for now due to flakiness / slowness in the process, except for XLANG
+    // templates, which MUST use shading because they're built using a custom Dockerfile
+    // that will copy only the shaded jar to the docker image.
+    boolean skipShade = templateMetadata.type() != TemplateType.XLANG;
+
     return new String[] {
       "mvn",
       "compile",
@@ -311,10 +393,10 @@ public abstract class TemplateTestBase {
       "-pl",
       moduleBuild,
       "-am",
-      "-PtemplatesStage,pluginOutputDir,splunkDeps",
+      "-PtemplatesStage,pluginOutputDir",
       "-DpluginRunId=" + RandomStringUtils.randomAlphanumeric(16),
       // Skip shading for now due to flakiness / slowness in the process.
-      "-DskipShade",
+      "-DskipShade=" + skipShade,
       "-DskipTests",
       "-Dmaven.test.skip",
       "-Dcheckstyle.skip",
@@ -326,7 +408,7 @@ public abstract class TemplateTestBase {
       "-DbucketName=" + bucketName,
       "-DgcpTempLocation=" + bucketName,
       "-DstagePrefix=" + prefix,
-      "-DtemplateName=" + template.name(),
+      "-DtemplateName=" + templateMetadata.name(),
       "-DunifiedWorker=" + System.getProperty("unifiedWorker"),
       // Print stacktrace when command fails
       "-e"
@@ -343,6 +425,12 @@ public abstract class TemplateTestBase {
   }
 
   @After
+  public void baseCleanup() throws IOException {
+    if (!skipBaseCleanup) {
+      tearDownBase();
+    }
+  }
+
   public void tearDownBase() throws IOException {
     LOG.info("Invoking tearDownBase cleanups for {} - {}", testName, testId);
 
@@ -356,10 +444,12 @@ public abstract class TemplateTestBase {
     }
   }
 
-  protected PipelineLauncher buildLauncher() {
+  protected PipelineLauncher buildLauncher(
+      Class<?> dataflowTemplateClass, Template templateMetadata) {
     if (usingDirectRunner) {
-      return DirectRunnerClient.builder(templateClass).setCredentials(credentials).build();
-    } else if (template.flexContainerName() != null && !template.flexContainerName().isEmpty()) {
+      return DirectRunnerClient.builder(dataflowTemplateClass).setCredentials(credentials).build();
+    } else if (templateMetadata.flexContainerName() != null
+        && !templateMetadata.flexContainerName().isEmpty()) {
       return FlexTemplateClient.builder(credentials).build();
     } else {
       return ClassicTemplateClient.builder(credentials).build();
@@ -371,7 +461,7 @@ public abstract class TemplateTestBase {
    * jobs getting leaked.
    */
   protected LaunchInfo launchTemplate(LaunchConfig.Builder options) throws IOException {
-    return this.launchTemplate(options, true);
+    return this.launchTemplate(options, true, this.template);
   }
 
   /**
@@ -386,8 +476,16 @@ public abstract class TemplateTestBase {
    */
   protected LaunchInfo launchTemplate(LaunchConfig.Builder options, boolean setupShutdownHook)
       throws IOException {
+    return this.launchTemplate(options, setupShutdownHook, this.template);
+  }
 
-    boolean flex = template.flexContainerName() != null && !template.flexContainerName().isEmpty();
+  protected LaunchInfo launchTemplate(
+      LaunchConfig.Builder options, boolean setupShutdownHook, Template templateMetadata)
+      throws IOException {
+
+    boolean flex =
+        templateMetadata.flexContainerName() != null
+            && !templateMetadata.flexContainerName().isEmpty();
 
     // Property allows testing with Runner v2 / Unified Worker
     if (System.getProperty("unifiedWorker") != null) {
@@ -429,7 +527,7 @@ public abstract class TemplateTestBase {
       }
 
       // If template has creation parameters, they need to be specified as a --parameter=value
-      for (Method method : template.optionsClass().getMethods()) {
+      for (Method method : templateMetadata.optionsClass().getMethods()) {
         TemplateCreationParameters creationParameters =
             method.getAnnotation(TemplateCreationParameters.class);
         if (creationParameters != null) {
@@ -473,10 +571,24 @@ public abstract class TemplateTestBase {
         artifactBucketName, getClass().getSimpleName(), gcsClient.runId(), artifactId);
   }
 
+  protected String getGcsPath(String artifactId, GcsResourceManager gcsResourceManager) {
+    return ArtifactUtils.getFullGcsPath(
+        artifactBucketName, getClass().getSimpleName(), gcsResourceManager.runId(), artifactId);
+  }
+
   /** Create the default configuration {@link PipelineOperator.Config} for a specific job info. */
   protected PipelineOperator.Config createConfig(LaunchInfo info) {
+    return createConfig(info, null);
+  }
+
+  /** Create the default configuration {@link PipelineOperator.Config} for a specific job info. */
+  protected PipelineOperator.Config createConfig(LaunchInfo info, Duration duration) {
     Config.Builder configBuilder =
         Config.builder().setJobId(info.jobId()).setProject(PROJECT).setRegion(REGION);
+
+    if (duration != null) {
+      configBuilder = configBuilder.setTimeoutAfter(duration);
+    }
 
     // For DirectRunner tests, reduce the max time and the interval, as there is no worker required
     if (usingDirectRunner) {
@@ -518,6 +630,20 @@ public abstract class TemplateTestBase {
         table.getProject() != null ? table.getProject() : PROJECT,
         table.getDataset(),
         table.getTable());
+  }
+
+  protected LaunchConfig.Builder enableRunnerV2(LaunchConfig.Builder config) {
+    return config.addEnvironment(
+        "additionalExperiments", Collections.singletonList("use_runner_v2"));
+  }
+
+  protected LaunchConfig.Builder disableRunnerV2(LaunchConfig.Builder config) {
+    return config.addEnvironment(
+        "additionalExperiments", Collections.singletonList("disable_runner_v2"));
+  }
+
+  protected LaunchConfig.Builder enableStreamingEngine(LaunchConfig.Builder config) {
+    return config.addEnvironment("enableStreamingEngine", true);
   }
 
   /**

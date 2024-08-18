@@ -166,7 +166,9 @@ import org.slf4j.LoggerFactory;
       "The Cloud Spanner change stream must exist prior to running the pipeline.",
       "The BigQuery dataset must exist prior to running the pipeline."
     },
-    streaming = true)
+    streaming = true,
+    supportsExactlyOnce = true,
+    supportsAtLeastOnce = true)
 public final class SpannerChangeStreamsToBigQuery {
 
   /** String/String Coder for {@link FailsafeElement}. */
@@ -201,6 +203,14 @@ public final class SpannerChangeStreamsToBigQuery {
   private static void validateOptions(SpannerChangeStreamsToBigQueryOptions options) {
     if (options.getDlqRetryMinutes() <= 0) {
       throw new IllegalArgumentException("dlqRetryMinutes must be positive.");
+    }
+    if (options
+        .getBigQueryChangelogTableNameTemplate()
+        .equals(BigQueryUtils.BQ_CHANGELOG_FIELD_NAME_TABLE_NAME)) {
+      throw new IllegalArgumentException(
+          String.format(
+              "bigQueryChangelogTableNameTemplate cannot be set to '{%s}'. This value is reserved for the Cloud Spanner table name.",
+              BigQueryUtils.BQ_CHANGELOG_FIELD_NAME_TABLE_NAME));
     }
 
     BigQueryIOUtils.validateBQStorageApiOptionsStreaming(options);
