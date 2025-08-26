@@ -12,22 +12,22 @@ check [Provided templates documentation](https://cloud.google.com/dataflow/docs/
 on how to use it without having to build from sources using [Create job from template](https://console.cloud.google.com/dataflow/createjob?template=Datastore_to_GCS_Text).
 
 :bulb: This is a generated documentation based
-on [Metadata Annotations](https://github.com/GoogleCloudPlatform/DataflowTemplates#metadata-annotations)
+on [Metadata Annotations](https://github.com/GoogleCloudPlatform/DataflowTemplates/blob/main/contributor-docs/code-contributions.md#metadata-annotations)
 . Do not change this file directly.
 
 ## Parameters
 
 ### Required parameters
 
-* **datastoreReadGqlQuery** : A GQL (https://cloud.google.com/datastore/docs/reference/gql_reference) query that specifies which entities to grab. For example, `SELECT * FROM MyKind`.
-* **datastoreReadProjectId** : The ID of the Google Cloud project that contains the Datastore instance that you want to read data from.
-* **textWritePrefix** : The Cloud Storage path prefix that specifies where the data is written. (Example: gs://mybucket/somefolder/).
+* **datastoreReadGqlQuery**: A GQL (https://cloud.google.com/datastore/docs/reference/gql_reference) query that specifies which entities to grab. For example, `SELECT * FROM MyKind`.
+* **datastoreReadProjectId**: The ID of the Google Cloud project that contains the Datastore instance that you want to read data from.
+* **textWritePrefix**: The Cloud Storage path prefix that specifies where the data is written. For example, `gs://mybucket/somefolder/`.
 
 ### Optional parameters
 
-* **datastoreReadNamespace** : The namespace of the requested entities. To use the default namespace, leave this parameter blank.
-* **javascriptTextTransformGcsPath** : The Cloud Storage URI of the .js file that defines the JavaScript user-defined function (UDF) to use. For example, `gs://my-bucket/my-udfs/my_file.js`.
-* **javascriptTextTransformFunctionName** : The name of the JavaScript user-defined function (UDF) to use. For example, if your JavaScript function code is `myTransform(inJson) { /*...do stuff...*/ }`, then the function name is `myTransform`. For sample JavaScript UDFs, see UDF Examples (https://github.com/GoogleCloudPlatform/DataflowTemplates#udf-examples).
+* **datastoreReadNamespace**: The namespace of the requested entities. To use the default namespace, leave this parameter blank.
+* **javascriptTextTransformGcsPath**: The Cloud Storage URI of the .js file that defines the JavaScript user-defined function (UDF) to use. For example, `gs://my-bucket/my-udfs/my_file.js`.
+* **javascriptTextTransformFunctionName**: The name of the JavaScript user-defined function (UDF) to use. For example, if your JavaScript function code is `myTransform(inJson) { /*...do stuff...*/ }`, then the function name is `myTransform`. For sample JavaScript UDFs, see UDF Examples (https://github.com/GoogleCloudPlatform/DataflowTemplates#udf-examples).
 
 
 ## User-Defined functions (UDFs)
@@ -45,7 +45,7 @@ for more information about how to create and test those functions.
 
 ### Requirements
 
-* Java 11
+* Java 17
 * Maven
 * [gcloud CLI](https://cloud.google.com/sdk/gcloud), and execution of the
   following commands:
@@ -219,7 +219,7 @@ resource "google_dataflow_job" "datastore_to_gcs_text" {
   parameters        = {
     datastoreReadGqlQuery = "<datastoreReadGqlQuery>"
     datastoreReadProjectId = "<datastoreReadProjectId>"
-    textWritePrefix = "gs://mybucket/somefolder/"
+    textWritePrefix = "<textWritePrefix>"
     # datastoreReadNamespace = "<datastoreReadNamespace>"
     # javascriptTextTransformGcsPath = "<javascriptTextTransformGcsPath>"
     # javascriptTextTransformFunctionName = "<javascriptTextTransformFunctionName>"

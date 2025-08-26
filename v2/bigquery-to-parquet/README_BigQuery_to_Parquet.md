@@ -13,21 +13,21 @@ check [Provided templates documentation](https://cloud.google.com/dataflow/docs/
 on how to use it without having to build from sources using [Create job from template](https://console.cloud.google.com/dataflow/createjob?template=BigQuery_to_Parquet).
 
 :bulb: This is a generated documentation based
-on [Metadata Annotations](https://github.com/GoogleCloudPlatform/DataflowTemplates#metadata-annotations)
+on [Metadata Annotations](https://github.com/GoogleCloudPlatform/DataflowTemplates/blob/main/contributor-docs/code-contributions.md#metadata-annotations)
 . Do not change this file directly.
 
 ## Parameters
 
 ### Required parameters
 
-* **tableRef** : The BigQuery input table location. (Example: your-project:your-dataset.your-table-name).
-* **bucket** : The Cloud Storage folder to write the Parquet files to. (Example: gs://your-bucket/export/).
+* **tableRef**: The BigQuery input table location. For example, `your-project:your-dataset.your-table-name`.
+* **bucket**: The Cloud Storage folder to write the Parquet files to. For example, `gs://your-bucket/export/`.
 
 ### Optional parameters
 
-* **numShards** : The number of output file shards. The default value is 1.
-* **fields** : A comma-separated list of fields to select from the input BigQuery table.
-* **rowRestriction** : Read only rows which match the specified filter, which must be a SQL expression compatible with Google standard SQL (https://cloud.google.com/bigquery/docs/reference/standard-sql). If no value is specified, then all rows are returned.
+* **numShards**: The number of output file shards. The default value is `1`.
+* **fields**: A comma-separated list of fields to select from the input BigQuery table.
+* **rowRestriction**: Read only rows which match the specified filter, which must be a SQL expression compatible with Google standard SQL (https://cloud.google.com/bigquery/docs/reference/standard-sql). If no value is specified, then all rows are returned.
 
 
 
@@ -35,7 +35,7 @@ on [Metadata Annotations](https://github.com/GoogleCloudPlatform/DataflowTemplat
 
 ### Requirements
 
-* Java 11
+* Java 17
 * Maven
 * [gcloud CLI](https://cloud.google.com/sdk/gcloud), and execution of the
   following commands:
@@ -201,8 +201,8 @@ resource "google_dataflow_flex_template_job" "bigquery_to_parquet" {
   name              = "bigquery-to-parquet"
   region            = var.region
   parameters        = {
-    tableRef = "your-project:your-dataset.your-table-name"
-    bucket = "gs://your-bucket/export/"
+    tableRef = "<tableRef>"
+    bucket = "<bucket>"
     # numShards = "0"
     # fields = "<fields>"
     # rowRestriction = "<rowRestriction>"

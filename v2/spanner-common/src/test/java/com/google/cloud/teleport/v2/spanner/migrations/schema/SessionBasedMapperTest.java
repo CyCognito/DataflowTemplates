@@ -16,13 +16,16 @@
 package com.google.cloud.teleport.v2.spanner.migrations.schema;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import com.google.cloud.teleport.v2.spanner.ddl.Ddl;
+import com.google.cloud.teleport.v2.spanner.ddl.annotations.cassandra.CassandraType.Kind;
 import com.google.cloud.teleport.v2.spanner.migrations.utils.SessionFileReader;
 import com.google.cloud.teleport.v2.spanner.type.Type;
+import com.google.common.collect.ImmutableList;
 import com.google.common.io.Resources;
 import java.io.IOException;
 import java.nio.file.Paths;
@@ -58,6 +61,7 @@ public class SessionBasedMapperTest {
             .column("new_user_id")
             .string()
             .size(10)
+            .columnOptions(ImmutableList.of("CASSANDRA_TYPE=\"ascii\""))
             .endColumn()
             .primaryKey()
             .asc("new_user_id")
@@ -93,6 +97,7 @@ public class SessionBasedMapperTest {
             .column("new_user_id")
             .string()
             .size(20)
+            .columnOptions(ImmutableList.of("CASSANDRA_TYPE=\"ascii\""))
             .endColumn()
             .primaryKey()
             .asc("new_user_id")
@@ -350,5 +355,36 @@ public class SessionBasedMapperTest {
   @Test(expected = UnsupportedOperationException.class)
   public void testSourceTablesToMigrateNamespace() {
     mapper.getSourceTablesToMigrate("test");
+  }
+
+  @Test
+  public void testGetSyntheticPrimaryKeyColName() {
+    // Table with synthetic PK
+    String result = mapper.getSyntheticPrimaryKeyColName("", "new_people");
+    assertEquals("synth_id", result);
+
+    // Table without synthetic PK
+    assertNull(mapper.getSyntheticPrimaryKeyColName("", "new_cart"));
+  }
+
+  @Test(expected = NoSuchElementException.class)
+  public void testGetSyntheticPrimaryKeyColNameMissingTable() {
+    mapper.getSyntheticPrimaryKeyColName("", "nonexistent_table");
+  }
+
+  @Test
+  public void testColExistsAtSource() {
+    assertTrue(mapper.colExistsAtSource("", "new_cart", "new_quantity"));
+    assertFalse(mapper.colExistsAtSource("", "new_cart", "abc"));
+  }
+
+  @Test
+  public void testCassandraAnnotations() {
+    assertEquals(
+        mapper
+            .getSpannerColumnCassandraAnnotations("", "new_cart", "new_user_id")
+            .cassandraType()
+            .getKind(),
+        Kind.PRIMITIVE);
   }
 }

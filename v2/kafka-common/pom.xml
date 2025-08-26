@@ -22,11 +22,10 @@
     <version>1.0-SNAPSHOT</version>
   </parent>
   <artifactId>kafka-common</artifactId>
-  <modelVersion>4.0.0</modelVersion>
-
   <properties>
-    <kafka-clients.version>3.7.0</kafka-clients.version>
+    <skipShade>true</skipShade>
   </properties>
+  <modelVersion>4.0.0</modelVersion>
 
   <dependencies>
     <dependency>

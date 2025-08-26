@@ -36,6 +36,7 @@ import org.apache.beam.it.gcp.pubsub.PubsubResourceManager;
 import org.apache.beam.it.gcp.spanner.SpannerResourceManager;
 import org.apache.beam.it.gcp.spanner.conditions.SpannerRowsCheck;
 import org.apache.beam.it.gcp.spanner.matchers.SpannerAsserts;
+import org.apache.beam.it.gcp.storage.GcsResourceManager;
 import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.Before;
@@ -59,6 +60,7 @@ public class DataStreamToSpannerSessionIT extends DataStreamToSpannerITBase {
   private static HashSet<DataStreamToSpannerSessionIT> testInstances = new HashSet<>();
   public static PubsubResourceManager pubsubResourceManager;
   public static SpannerResourceManager spannerResourceManager;
+  public static GcsResourceManager gcsResourceManager;
   private static final String SPANNER_DDL_RESOURCE =
       "DataStreamToSpannerSessionIT/spanner-schema.sql";
   private static final String SESSION_FILE_RESOURCE =
@@ -78,6 +80,7 @@ public class DataStreamToSpannerSessionIT extends DataStreamToSpannerITBase {
       if (jobInfo == null) {
         spannerResourceManager = setUpSpannerResourceManager();
         pubsubResourceManager = setUpPubSubResourceManager();
+        gcsResourceManager = setUpSpannerITGcsResourceManager();
         createSpannerDDL(spannerResourceManager, SPANNER_DDL_RESOURCE);
         jobInfo =
             launchDataflowJob(
@@ -92,7 +95,9 @@ public class DataStreamToSpannerSessionIT extends DataStreamToSpannerITBase {
                     put("inputFileFormat", "avro");
                   }
                 },
-                null);
+                null,
+                null,
+                gcsResourceManager);
       }
     }
   }
@@ -107,11 +112,13 @@ public class DataStreamToSpannerSessionIT extends DataStreamToSpannerITBase {
     for (DataStreamToSpannerSessionIT instance : testInstances) {
       instance.tearDownBase();
     }
-    ResourceManagerUtils.cleanResources(spannerResourceManager, pubsubResourceManager);
+    ResourceManagerUtils.cleanResources(
+        spannerResourceManager, pubsubResourceManager, gcsResourceManager);
   }
 
+  /** Test checks for the following use-cases: 1. Drop Column. 2. Rename Column. 3. Drop Table */
   @Test
-  public void migrationTestWithRenameAndDropColumn() {
+  public void migrationTestWithRenameAndDrops() {
     // Construct a ChainedConditionCheck with 4 stages.
     // 1. Send initial wave of events
     // 2. Wait on Spanner to have events
@@ -122,7 +129,8 @@ public class DataStreamToSpannerSessionIT extends DataStreamToSpannerITBase {
                         jobInfo,
                         TABLE1,
                         "backfill_category.avro",
-                        "DataStreamToSpannerSessionIT/mysql-backfill-Category.avro"),
+                        "DataStreamToSpannerSessionIT/mysql-backfill-Category.avro",
+                        gcsResourceManager),
                     SpannerRowsCheck.builder(spannerResourceManager, TABLE1)
                         .setMinRows(2)
                         .setMaxRows(2)
@@ -146,7 +154,8 @@ public class DataStreamToSpannerSessionIT extends DataStreamToSpannerITBase {
                         jobInfo,
                         TABLE1,
                         "cdc_category.avro",
-                        "DataStreamToSpannerSessionIT/mysql-cdc-Category.avro"),
+                        "DataStreamToSpannerSessionIT/mysql-cdc-Category.avro",
+                        gcsResourceManager),
                     SpannerRowsCheck.builder(spannerResourceManager, TABLE1)
                         .setMinRows(3)
                         .setMaxRows(3)
@@ -160,11 +169,17 @@ public class DataStreamToSpannerSessionIT extends DataStreamToSpannerITBase {
     // Assert Conditions
     assertThatResult(result).meetsConditions();
 
+    // Sleep for cutover time to wait till all CDCs propagate.
+    // A real world customer also has a small cut over time to reach consistency.
+    try {
+      Thread.sleep(CUTOVER_MILLIS);
+    } catch (InterruptedException e) {
+    }
     assertCategoryTableCdcContents();
   }
 
   @Test
-  public void migrationTestWithSyntheticPK() {
+  public void migrationTestWithSyntheticPKAndExtraColumn() {
     // Construct a ChainedConditionCheck with 2 stages.
     // 1. Send initial wave of events
     // 2. Wait on Spanner to have events
@@ -175,7 +190,8 @@ public class DataStreamToSpannerSessionIT extends DataStreamToSpannerITBase {
                         jobInfo,
                         TABLE2,
                         "synth-id.avro",
-                        "DataStreamToSpannerSessionIT/Books.avro"),
+                        "DataStreamToSpannerSessionIT/Books.avro",
+                        gcsResourceManager),
                     SpannerRowsCheck.builder(spannerResourceManager, TABLE2)
                         .setMinRows(3)
                         .setMaxRows(3)

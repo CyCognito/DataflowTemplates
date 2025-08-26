@@ -34,7 +34,7 @@ public interface SchemaRegistryOptions extends PipelineOptions {
       },
       description = "Kafka Message Format",
       helpText =
-          "The format of the Kafka messages to read. The supported values are AVRO_CONFLUENT_WIRE_FORMAT (Confluent Schema Registry encoded Avro), AVRO_BINARY_ENCODING (Plain binary Avro), and JSON.")
+          "The format of the Kafka messages to read. The supported values are `AVRO_CONFLUENT_WIRE_FORMAT` (Confluent Schema Registry encoded Avro), `AVRO_BINARY_ENCODING` (Plain binary Avro), and `JSON`.")
   @Default.String(MessageFormatConstants.AVRO_CONFLUENT_WIRE_FORMAT)
   String getMessageFormat();
 
@@ -53,9 +53,9 @@ public interface SchemaRegistryOptions extends PipelineOptions {
       description = "Schema Source",
       optional = true,
       helpText =
-          "The Kafka schema format. Can be provided as SINGLE_SCHEMA_FILE or SCHEMA_REGISTRY. "
-              + "If SINGLE_SCHEMA_FILE is specified, all messages should have the schema mentioned in the avro schema file. "
-              + "If SCHEMA_REGISTRY is specified, the messages can have either a single schema or multiple schemas.")
+          "The Kafka schema format. Can be provided as `SINGLE_SCHEMA_FILE` or `SCHEMA_REGISTRY`. "
+              + "If `SINGLE_SCHEMA_FILE` is specified, use the schema mentioned in the avro schema file for all messages. "
+              + "If `SCHEMA_REGISTRY` is specified, the messages can have either a single schema or multiple schemas.")
   @Default.String(SchemaFormat.SINGLE_SCHEMA_FILE)
   String getSchemaFormat();
 
@@ -114,10 +114,11 @@ public interface SchemaRegistryOptions extends PipelineOptions {
       enumOptions = {
         @TemplateParameter.TemplateEnumOption(KafkaAuthenticationMethod.NONE),
         @TemplateParameter.TemplateEnumOption(KafkaAuthenticationMethod.TLS),
+        @TemplateParameter.TemplateEnumOption(KafkaAuthenticationMethod.OAUTH),
       },
       optional = true,
       description = "Authentication Mode",
-      helpText = "Schema Registry authentication mode. Can be NONE or TLS.")
+      helpText = "Schema Registry authentication mode. Can be NONE, TLS or OAUTH.")
   @Default.String(KafkaAuthenticationMethod.NONE)
   String getSchemaRegistryAuthenticationMode();
 
@@ -188,4 +189,59 @@ public interface SchemaRegistryOptions extends PipelineOptions {
   String getSchemaRegistryKeyPasswordSecretId();
 
   void setSchemaRegistryKeyPasswordSecretId(String keyPasswordSecretId);
+
+  @TemplateParameter.Text(
+      order = 11,
+      parentName = "SchemaRegistryOauthAuthenticationMode",
+      parentTriggerValues = {KafkaAuthenticationMethod.OAUTH},
+      optional = true,
+      description = "Client ID",
+      helpText =
+          "Client ID used to authenticate the Schema Registry client in OAUTH mode. Required for "
+              + "AVRO_CONFLUENT_WIRE_FORMAT message format.")
+  String getSchemaRegistryOauthClientId();
+
+  void setSchemaRegistryOauthClientId(String schemaRegistryOauthClientId);
+
+  @TemplateParameter.Text(
+      order = 11,
+      parentName = "SchemaRegistryOauthAuthenticationMode",
+      parentTriggerValues = {KafkaAuthenticationMethod.OAUTH},
+      optional = true,
+      description = "Token Endpoint URL",
+      helpText =
+          "The HTTP(S)-based URL for the OAuth/OIDC identity provider used to authenticate the "
+              + "Schema Registry client in OAUTH mode. Required for AVRO_CONFLUENT_WIRE_FORMAT message format.")
+  String getSchemaRegistryOauthTokenEndpointUrl();
+
+  void setSchemaRegistryOauthTokenEndpointUrl(String schemaRegistryOauthTokenEndpointUrl);
+
+  @TemplateParameter.Text(
+      order = 11,
+      parentName = "SchemaRegistryOauthAuthenticationMode",
+      parentTriggerValues = {KafkaAuthenticationMethod.OAUTH},
+      optional = true,
+      description = "Scope",
+      helpText =
+          "The access token scope used to authenticate the "
+              + "Schema Registry client in OAUTH mode. This field is optional, as the request can be made without a scope "
+              + "parameter passed.",
+      example = "openid")
+  String getSchemaRegistryOauthScope();
+
+  void setSchemaRegistryOauthScope(String schemaRegistryOauthScope);
+
+  @TemplateParameter.Text(
+      order = 11,
+      parentName = "SchemaRegistryOauthAuthenticationMode",
+      parentTriggerValues = {KafkaAuthenticationMethod.OAUTH},
+      optional = true,
+      description = "Client Secret ID",
+      helpText =
+          "The Google Cloud Secret Manager secret ID that contains the Client Secret to use to authenticate the "
+              + "Schema Registry client in OAUTH mode. Required for AVRO_CONFLUENT_WIRE_FORMAT message format.",
+      example = "projects/<PROJECT_ID>/secrets/<SECRET_ID>/versions/<SECRET_VERSION>")
+  String getSchemaRegistryOauthClientSecretId();
+
+  void setSchemaRegistryOauthClientSecretId(String schemaRegistryOauthClientSecretId);
 }

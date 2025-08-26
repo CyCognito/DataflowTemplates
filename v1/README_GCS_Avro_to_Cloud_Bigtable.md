@@ -11,21 +11,21 @@ check [Provided templates documentation](https://cloud.google.com/dataflow/docs/
 on how to use it without having to build from sources using [Create job from template](https://console.cloud.google.com/dataflow/createjob?template=GCS_Avro_to_Cloud_Bigtable).
 
 :bulb: This is a generated documentation based
-on [Metadata Annotations](https://github.com/GoogleCloudPlatform/DataflowTemplates#metadata-annotations)
+on [Metadata Annotations](https://github.com/GoogleCloudPlatform/DataflowTemplates/blob/main/contributor-docs/code-contributions.md#metadata-annotations)
 . Do not change this file directly.
 
 ## Parameters
 
 ### Required parameters
 
-* **bigtableProjectId** : The ID of the Google Cloud project that contains the Bigtable instance that you want to write data to.
-* **bigtableInstanceId** : The ID of the Bigtable instance that contains the table.
-* **bigtableTableId** : The ID of the Bigtable table to import.
-* **inputFilePattern** : The Cloud Storage path pattern where data is located. (Example: gs://<BUCKET>/<FOLDER>/<PREFIX>*).
+* **bigtableProjectId**: The ID of the Google Cloud project that contains the Bigtable instance that you want to write data to.
+* **bigtableInstanceId**: The ID of the Bigtable instance that contains the table.
+* **bigtableTableId**: The ID of the Bigtable table to import.
+* **inputFilePattern**: The Cloud Storage path pattern where data is located. For example, `gs://<BUCKET_NAME>/FOLDER/PREFIX*`.
 
 ### Optional parameters
 
-* **splitLargeRows** : The flag for enabling splitting of large rows into multiple MutateRows requests. Note that when a large row is split between multiple API calls, the updates to the row are not atomic. .
+* **splitLargeRows**: The flag for enabling splitting of large rows into multiple MutateRows requests. Note that when a large row is split between multiple API calls, the updates to the row are not atomic.
 
 
 
@@ -33,7 +33,7 @@ on [Metadata Annotations](https://github.com/GoogleCloudPlatform/DataflowTemplat
 
 ### Requirements
 
-* Java 11
+* Java 17
 * Maven
 * [gcloud CLI](https://cloud.google.com/sdk/gcloud), and execution of the
   following commands:
@@ -205,7 +205,7 @@ resource "google_dataflow_job" "gcs_avro_to_cloud_bigtable" {
     bigtableProjectId = "<bigtableProjectId>"
     bigtableInstanceId = "<bigtableInstanceId>"
     bigtableTableId = "<bigtableTableId>"
-    inputFilePattern = "gs://<BUCKET>/<FOLDER>/<PREFIX>*"
+    inputFilePattern = "<inputFilePattern>"
     # splitLargeRows = "<splitLargeRows>"
   }
 }

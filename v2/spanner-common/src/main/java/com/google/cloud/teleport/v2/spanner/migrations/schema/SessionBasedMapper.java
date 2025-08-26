@@ -19,6 +19,7 @@ import com.google.cloud.spanner.Dialect;
 import com.google.cloud.teleport.v2.spanner.ddl.Column;
 import com.google.cloud.teleport.v2.spanner.ddl.Ddl;
 import com.google.cloud.teleport.v2.spanner.ddl.Table;
+import com.google.cloud.teleport.v2.spanner.ddl.annotations.cassandra.CassandraAnnotations;
 import com.google.cloud.teleport.v2.spanner.migrations.utils.SessionFileReader;
 import com.google.cloud.teleport.v2.spanner.type.Type;
 import java.io.Serializable;
@@ -29,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import org.apache.curator.shaded.com.google.common.collect.ImmutableList;
 import org.apache.parquet.Strings;
@@ -68,15 +70,13 @@ public class SessionBasedMapper implements ISchemaMapper, Serializable {
       throws InputMismatchException {
     this.schema = schema;
     this.ddl = ddl;
-    try {
-      validateSchemaAndDdl(schema, ddl);
-      LOG.info("schema matches between session file and spanner");
-    } catch (InputMismatchException e) {
-      if (strictCheckSchema) {
+    if (strictCheckSchema) {
+      try {
+        validateSchemaAndDdl(schema, ddl);
+        LOG.info("schema matches between session file and spanner");
+      } catch (InputMismatchException e) {
         LOG.warn("schema does not match between session and spanner: {}", e.getMessage());
         throw e;
-      } else {
-        LOG.warn("proceeding without schema match between session and spanner");
       }
     }
   }
@@ -181,6 +181,35 @@ public class SessionBasedMapper implements ISchemaMapper, Serializable {
   @Override
   public Type getSpannerColumnType(String namespace, String spannerTable, String spannerColumn)
       throws NoSuchElementException {
+    Column col = getCol(namespace, spannerTable, spannerColumn);
+    return col.type();
+  }
+
+  /**
+   * Retrieves the Spanner column's Cassandra type given a spanner table and spanner column.
+   *
+   * @param namespace is currently not operational.
+   */
+  @Override
+  public CassandraAnnotations getSpannerColumnCassandraAnnotations(
+      String namespace, String spannerTable, String spannerColumn) throws NoSuchElementException {
+    Column col = getCol(namespace, spannerTable, spannerColumn);
+    return col.cassandraAnnotation();
+  }
+
+  @Override
+  public List<String> getSpannerColumns(String namespace, String spannerTable)
+      throws NoSuchElementException {
+    return schema.getSpannerColumnNames(spannerTable);
+  }
+
+  /**
+   * private helper to extract spannerColumn form nameSpace spannerTable, and spannerColumn.
+   *
+   * @param namespace is currently not operational.
+   */
+  private Column getCol(String namespace, String spannerTable, String spannerColumn)
+      throws NoSuchElementException {
     Table spTable = ddl.table(spannerTable);
     if (spTable == null) {
       throw new NoSuchElementException(String.format("Spanner table '%s' not found", spannerTable));
@@ -190,13 +219,7 @@ public class SessionBasedMapper implements ISchemaMapper, Serializable {
       throw new NoSuchElementException(
           String.format("Spanner column '%s' not found", spannerColumn));
     }
-    return col.type();
-  }
-
-  @Override
-  public List<String> getSpannerColumns(String namespace, String spannerTable)
-      throws NoSuchElementException {
-    return schema.getSpannerColumnNames(spannerTable);
+    return col;
   }
 
   @Override
@@ -247,5 +270,55 @@ public class SessionBasedMapper implements ISchemaMapper, Serializable {
         String.format(
             "Found null shard col name for table %s, colId %s, please provide a valid session file.",
             spannerTableName, colId));
+  }
+
+  @Override
+  public String getSyntheticPrimaryKeyColName(String namespace, String spannerTableName) {
+    // Get the table ID mapping or throw if table not found
+    NameAndCols tableMapping =
+        Optional.ofNullable(schema.getSpannerToID().get(spannerTableName))
+            .orElseThrow(
+                () ->
+                    new NoSuchElementException(
+                        String.format("Spanner table '%s' not found", spannerTableName)));
+
+    String tableId =
+        Optional.ofNullable(tableMapping.getName())
+            .orElseThrow(
+                () ->
+                    new NoSuchElementException(
+                        String.format("Invalid table ID for table %s", spannerTableName)));
+
+    // If no synthetic PK exists for this table, return null
+    SyntheticPKey synthPk = schema.getSyntheticPks().get(tableId);
+    if (synthPk == null) {
+      return null;
+    }
+
+    // Get the column definition and return its name
+    SpannerTable table =
+        Optional.ofNullable(schema.getSpSchema().get(tableId))
+            .orElseThrow(
+                () ->
+                    new NoSuchElementException(
+                        String.format("Table %s not found in schema", tableId)));
+
+    return Optional.ofNullable(table.getColDefs())
+        .map(cols -> cols.get(synthPk.getColId()))
+        .map(SpannerColumnDefinition::getName)
+        .orElseThrow(
+            () ->
+                new NoSuchElementException(
+                    String.format("Invalid column definition for table %s", spannerTableName)));
+  }
+
+  @Override
+  public boolean colExistsAtSource(String namespace, String spannerTable, String spannerColumn) {
+    try {
+      getSourceColumnName(namespace, spannerTable, spannerColumn);
+      return true;
+    } catch (NoSuchElementException e) {
+      return false;
+    }
   }
 }

@@ -33,14 +33,14 @@ func main() {
 	mvnFlags := workflows.NewMavenFlags()
 	err := workflows.MvnCleanInstall().Run(
 		mvnFlags.IncludeDependencies(),
-		mvnFlags.IncludeDependents(),
 		mvnFlags.SkipDependencyAnalysis(),
 		mvnFlags.SkipCheckstyle(),
 		mvnFlags.SkipJib(),
 		mvnFlags.SkipTests(),
 		mvnFlags.SkipJacoco(),
 		mvnFlags.SkipShade(),
-		mvnFlags.ThreadCount(8))
+		mvnFlags.ThreadCount(8),
+		mvnFlags.InternalMaven())
 	if err != nil {
 		log.Fatalf("%v\n", err)
 	}
@@ -49,16 +49,16 @@ func main() {
 	mvnFlags = workflows.NewMavenFlags()
 	err = workflows.MvnVerify().Run(
 		mvnFlags.IncludeDependencies(),
-		mvnFlags.IncludeDependents(),
 		mvnFlags.SkipDependencyAnalysis(),
 		mvnFlags.SkipCheckstyle(),
 		mvnFlags.SkipJib(),
 		mvnFlags.SkipShade(),
-		mvnFlags.RunIntegrationTests(),
-		mvnFlags.ThreadCount(4),
-		mvnFlags.IntegrationTestParallelism(3),
+		mvnFlags.RunIntegrationTests(flags.UnifiedWorkerHarnessContainerImage() != ""),
+		mvnFlags.ThreadCount(flags.ThreadCount()),
+		mvnFlags.IntegrationTestParallelism(flags.IntegrationTestParallelism()),
 		mvnFlags.StaticBigtableInstance("teleport"),
 		mvnFlags.StaticSpannerInstance("teleport"),
+		mvnFlags.InternalMaven(),
 		flags.Region(),
 		flags.Project(),
 		flags.ArtifactBucket(),
@@ -73,6 +73,8 @@ func main() {
 		flags.CloudProxyHost(),
 		flags.CloudProxyMySqlPort(),
 		flags.CloudProxyPostgresPort(),
+		flags.CloudProxyPassword(),
+		flags.UnifiedWorkerHarnessContainerImage(),
 		flags.CloudProxyPassword())
 	if err != nil {
 		log.Fatalf("%v\n", err)

@@ -25,12 +25,19 @@ import com.google.cloud.teleport.spanner.ddl.ChangeStream;
 import com.google.cloud.teleport.spanner.ddl.Ddl;
 import com.google.cloud.teleport.spanner.ddl.Model;
 import com.google.cloud.teleport.spanner.ddl.NamedSchema;
+import com.google.cloud.teleport.spanner.ddl.Placement;
+import com.google.cloud.teleport.spanner.ddl.PropertyGraph;
 import com.google.cloud.teleport.spanner.ddl.Sequence;
 import com.google.cloud.teleport.spanner.ddl.Table;
+import com.google.cloud.teleport.spanner.ddl.Udf;
 import com.google.cloud.teleport.spanner.proto.ExportProtos;
 import com.google.cloud.teleport.spanner.proto.ExportProtos.Export;
 import com.google.cloud.teleport.spanner.proto.ExportProtos.ProtoDialect;
 import com.google.cloud.teleport.spanner.proto.ExportProtos.TableManifest;
+import com.google.cloud.teleport.spanner.spannerio.ReadOperation;
+import com.google.cloud.teleport.spanner.spannerio.SpannerConfig;
+import com.google.cloud.teleport.spanner.spannerio.SpannerIO;
+import com.google.cloud.teleport.spanner.spannerio.Transaction;
 import com.google.cloud.teleport.templates.common.SpannerConverters.CreateTransactionFnWithTimestamp;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Strings;
@@ -78,10 +85,6 @@ import org.apache.beam.sdk.io.TextIO;
 import org.apache.beam.sdk.io.WriteFilesResult;
 import org.apache.beam.sdk.io.fs.ResolveOptions;
 import org.apache.beam.sdk.io.fs.ResourceId;
-import org.apache.beam.sdk.io.gcp.spanner.LocalSpannerIO;
-import org.apache.beam.sdk.io.gcp.spanner.ReadOperation;
-import org.apache.beam.sdk.io.gcp.spanner.SpannerConfig;
-import org.apache.beam.sdk.io.gcp.spanner.Transaction;
 import org.apache.beam.sdk.options.ValueProvider;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.Combine.CombineFn;
@@ -183,7 +186,7 @@ public class ExportTransform extends PTransform<PBegin, WriteFilesResult<String>
 
     /*
      * Allow users to specify read timestamp.
-     * CreateTransaction and CreateTransactionFn classes in LocalSpannerIO
+     * CreateTransaction and CreateTransactionFn classes in SpannerIO
      * only take a timestamp object for exact staleness which works when
      * parameters are provided during template compile time. They do not work with
      * a Timestamp valueProvider which can take parameters at runtime. Hence a new
@@ -280,7 +283,7 @@ public class ExportTransform extends PTransform<PBegin, WriteFilesResult<String>
                     c.output(ddl);
                   }
                 }));
-    PCollection<ReadOperation> tables =
+    PCollection<ReadOperation> tableReadOperations =
         ddl.apply("Build table read operations", new BuildReadFromTableOperations(tableNames));
 
     PCollection<KV<String, Void>> allTableAndViewNames =
@@ -315,6 +318,21 @@ public class ExportTransform extends PTransform<PBegin, WriteFilesResult<String>
                     Ddl ddl = c.element();
                     for (Model model : ddl.models()) {
                       c.output(model.name());
+                    }
+                  }
+                }));
+
+    PCollection<String> allPropertyGraphNames =
+        ddl.apply(
+            "List all property graph names",
+            ParDo.of(
+                new DoFn<Ddl, String>() {
+
+                  @ProcessElement
+                  public void processElement(ProcessContext c) {
+                    Ddl ddl = c.element();
+                    for (PropertyGraph graph : ddl.propertyGraphs()) {
+                      c.output(graph.name());
                     }
                   }
                 }));
@@ -360,6 +378,36 @@ public class ExportTransform extends PTransform<PBegin, WriteFilesResult<String>
                     Ddl ddl = c.element();
                     for (NamedSchema t : ddl.schemas()) {
                       c.output(t.name());
+                    }
+                  }
+                }));
+
+    PCollection<String> allPlacementNames =
+        ddl.apply(
+            "List all placement names",
+            ParDo.of(
+                new DoFn<Ddl, String>() {
+
+                  @ProcessElement
+                  public void processElement(ProcessContext c) {
+                    Ddl ddl = c.element();
+                    for (Placement placement : ddl.placements()) {
+                      c.output(placement.name());
+                    }
+                  }
+                }));
+
+    PCollection<String> allUdfNames =
+        ddl.apply(
+            "List all user-defined function names",
+            ParDo.of(
+                new DoFn<Ddl, String>() {
+
+                  @ProcessElement
+                  public void processElement(ProcessContext c) {
+                    Ddl ddl = c.element();
+                    for (Udf udf : ddl.udfs()) {
+                      c.output(udf.specificName());
                     }
                   }
                 }));
@@ -423,9 +471,9 @@ public class ExportTransform extends PTransform<PBegin, WriteFilesResult<String>
             .apply("As view", View.asMap());
 
     PCollection<Struct> rows =
-        tables.apply(
+        tableReadOperations.apply(
             "Read all rows from Spanner",
-            LocalSpannerIO.readAll().withTransaction(tx).withSpannerConfig(spannerConfig));
+            SpannerIO.readAll().withTransaction(tx).withSpannerConfig(spannerConfig));
 
     ValueProvider<ResourceId> resource =
         ValueProvider.NestedValueProvider.of(
@@ -499,6 +547,24 @@ public class ExportTransform extends PTransform<PBegin, WriteFilesResult<String>
                   }
                 }));
 
+    PCollection<KV<String, Iterable<String>>> propertyGraphs =
+        allPropertyGraphNames.apply(
+            "Export property graphs",
+            ParDo.of(
+                new DoFn<String, KV<String, Iterable<String>>>() {
+
+                  @ProcessElement
+                  public void processElement(ProcessContext c) {
+                    String propertyGraphName = c.element();
+                    LOG.info("Exporting property graph: " + propertyGraphName);
+                    // This file will contain the schema definition for the propertyGraph.
+                    c.output(
+                        KV.of(
+                            propertyGraphName,
+                            Collections.singleton(propertyGraphName + ".avro-00000-of-00001")));
+                  }
+                }));
+
     PCollection<KV<String, Iterable<String>>> changeStreams =
         allChangeStreamNames.apply(
             "Export change streams",
@@ -553,6 +619,40 @@ public class ExportTransform extends PTransform<PBegin, WriteFilesResult<String>
                   }
                 }));
 
+    PCollection<KV<String, Iterable<String>>> placements =
+        allPlacementNames.apply(
+            "Export placements",
+            ParDo.of(
+                new DoFn<String, KV<String, Iterable<String>>>() {
+
+                  @ProcessElement
+                  public void processElement(ProcessContext c) {
+                    String placementName = c.element();
+                    LOG.info("Exporting placement: " + placementName);
+                    // This file will contain the schema definition for the placement.
+                    c.output(
+                        KV.of(
+                            placementName,
+                            Collections.singleton(placementName + ".avro-00000-of-00001")));
+                  }
+                }));
+
+    PCollection<KV<String, Iterable<String>>> udfs =
+        allUdfNames.apply(
+            "Export user-defined functions",
+            ParDo.of(
+                new DoFn<String, KV<String, Iterable<String>>>() {
+
+                  @ProcessElement
+                  public void processElement(ProcessContext c) {
+                    String udfName = c.element();
+                    LOG.info("Exporting user-defined function: " + udfName);
+                    // This file will contain the schema definition for the UDF.
+                    c.output(
+                        KV.of(udfName, Collections.singleton(udfName + ".avro-00000-of-00001")));
+                  }
+                }));
+
     // Empty tables, views, models, change streams, sequences and named schema are handled together,
     // because we export them as empty Avro files that only contain the Avro schemas.
     PCollection<KV<String, Iterable<String>>> emptySchemaFiles =
@@ -561,6 +661,9 @@ public class ExportTransform extends PTransform<PBegin, WriteFilesResult<String>
             .and(changeStreams)
             .and(sequences)
             .and(namedSchemas)
+            .and(placements)
+            .and(udfs)
+            .and(propertyGraphs)
             .apply("Combine all empty schema files", Flatten.pCollections());
 
     emptySchemaFiles =
@@ -902,6 +1005,10 @@ public class ExportTransform extends PTransform<PBegin, WriteFilesResult<String>
           exportManifest.addChangeStreams(obj);
         } else if (ddl.sequence(obj.getName()) != null) {
           exportManifest.addSequences(obj);
+        } else if (ddl.placement(obj.getName()) != null) {
+          exportManifest.addPlacements(obj);
+        } else if (ddl.udf(obj.getName()) != null) {
+          exportManifest.addUdfs(obj);
         } else {
           exportManifest.addTables(obj);
         }

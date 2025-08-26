@@ -10,7 +10,7 @@ TODO theres a lot left to add below
 * Java 11
 * Maven
 * DataStream stream is created and sending data to storage
-* Postgres DB is accesible via Dataflow and has schema matched to Oracle.
+* Postgres DB is accessible via Dataflow and has schema matched to Oracle.
 
 ### Building Template
 This is a Flex Template meaning that the pipeline code will be containerized and the container will be
@@ -24,7 +24,7 @@ export PROJECT=<my-project>
 export IMAGE_NAME=datastream-to-postgres
 export BUCKET_NAME=gs://<bucket-name>
 export TARGET_GCR_IMAGE=gcr.io/${PROJECT}/${IMAGE_NAME}
-export BASE_CONTAINER_IMAGE=gcr.io/dataflow-templates-base/java11-template-launcher-base
+export BASE_CONTAINER_IMAGE=gcr.io/dataflow-templates-base/java17-template-launcher-base
 export BASE_CONTAINER_IMAGE_VERSION=latest
 export APP_ROOT=/template/${IMAGE_NAME}
 export DATAFLOW_JAVA_COMMAND_SPEC=${APP_ROOT}/resources/${IMAGE_NAME}-command-spec.json

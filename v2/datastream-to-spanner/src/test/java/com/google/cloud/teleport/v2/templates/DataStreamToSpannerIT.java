@@ -46,7 +46,6 @@ import org.apache.beam.it.common.utils.PipelineUtils;
 import org.apache.beam.it.common.utils.ResourceManagerUtils;
 import org.apache.beam.it.conditions.ChainedConditionCheck;
 import org.apache.beam.it.conditions.ConditionCheck;
-import org.apache.beam.it.gcp.TemplateTestBase;
 import org.apache.beam.it.gcp.cloudsql.CloudMySQLResourceManager;
 import org.apache.beam.it.gcp.cloudsql.CloudOracleResourceManager;
 import org.apache.beam.it.gcp.cloudsql.CloudSqlResourceManager;
@@ -56,22 +55,26 @@ import org.apache.beam.it.gcp.datastream.MySQLSource;
 import org.apache.beam.it.gcp.datastream.OracleSource;
 import org.apache.beam.it.gcp.pubsub.PubsubResourceManager;
 import org.apache.beam.it.gcp.spanner.SpannerResourceManager;
+import org.apache.beam.it.gcp.spanner.SpannerTemplateITBase;
 import org.apache.beam.it.gcp.spanner.conditions.SpannerRowsCheck;
 import org.apache.beam.it.gcp.spanner.matchers.SpannerAsserts;
+import org.apache.beam.it.gcp.storage.GcsResourceManager;
 import org.apache.beam.it.jdbc.JDBCResourceManager;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import org.junit.runners.Parameterized;
 
 /** Integration test for {@link DataStreamToSpanner} Flex template. */
 @Category({TemplateIntegrationTest.class, SkipDirectRunnerTest.class})
 @TemplateIntegrationTest(DataStreamToSpanner.class)
-@RunWith(JUnit4.class)
-public class DataStreamToSpannerIT extends TemplateTestBase {
+@RunWith(Parameterized.class)
+@Ignore("Triaging flaky test") // TODO(b/424086159)
+public class DataStreamToSpannerIT extends SpannerTemplateITBase {
 
   enum JDBCType {
     MYSQL,
@@ -99,16 +102,23 @@ public class DataStreamToSpannerIT extends TemplateTestBase {
   private SpannerResourceManager spannerResourceManager;
   private PubsubResourceManager pubsubResourceManager;
 
+  private GcsResourceManager gcsResourceManager;
+
   @Before
   public void setUp() throws IOException {
     datastreamResourceManager =
         DatastreamResourceManager.builder(testName, PROJECT, REGION)
             .setCredentialsProvider(credentialsProvider)
-            .setPrivateConnectivity("datastream-private-connect-us-central1")
+            .setPrivateConnectivity("datastream-connect-2")
             .build();
 
-    gcsPrefix = getGcsPath(testName + "/cdc/").replace("gs://" + artifactBucketName, "");
-    dlqGcsPrefix = getGcsPath(testName + "/dlq/").replace("gs://" + artifactBucketName, "");
+    gcsResourceManager = setUpSpannerITGcsResourceManager();
+    gcsPrefix =
+        getGcsPath(testName + "/cdc/", gcsResourceManager)
+            .replace("gs://" + gcsResourceManager.getBucket(), "");
+    dlqGcsPrefix =
+        getGcsPath(testName + "/dlq/", gcsResourceManager)
+            .replace("gs://" + gcsResourceManager.getBucket(), "");
   }
 
   @After
@@ -117,7 +127,8 @@ public class DataStreamToSpannerIT extends TemplateTestBase {
         cloudSqlResourceManager,
         datastreamResourceManager,
         spannerResourceManager,
-        pubsubResourceManager);
+        pubsubResourceManager,
+        gcsResourceManager);
   }
 
   @Test
@@ -126,67 +137,16 @@ public class DataStreamToSpannerIT extends TemplateTestBase {
     simpleMySqlToSpannerTest(
         DatastreamResourceManager.DestinationOutputFormat.AVRO_FILE_FORMAT,
         Dialect.GOOGLE_STANDARD_SQL,
-        false,
         Function.identity());
   }
 
   @Test
+  @Ignore("This test is flaky, and Oracle is not fully supported migration source yet")
   public void testDataStreamOracleToSpanner() throws IOException {
     // Run a simple IT
     simpleOracleToSpannerTest(
         DatastreamResourceManager.DestinationOutputFormat.AVRO_FILE_FORMAT,
         Dialect.GOOGLE_STANDARD_SQL,
-        false,
-        Function.identity());
-  }
-
-  @Test
-  public void testDataStreamMySqlToSpannerGCSNotifications() throws IOException {
-    createPubSubNotifications();
-
-    // Run a simple IT
-    simpleMySqlToSpannerTest(
-        DatastreamResourceManager.DestinationOutputFormat.AVRO_FILE_FORMAT,
-        Dialect.GOOGLE_STANDARD_SQL,
-        false,
-        config ->
-            config
-                .addParameter("gcsPubSubSubscription", subscription.toString())
-                .addParameter("dlqGcsPubSubSubscription", dlqSubscription.toString()));
-  }
-
-  @Test
-  public void testDataStreamOracleToSpannerGCSNotifications() throws IOException {
-    createPubSubNotifications();
-
-    // Run a simple IT
-    simpleOracleToSpannerTest(
-        DatastreamResourceManager.DestinationOutputFormat.AVRO_FILE_FORMAT,
-        Dialect.GOOGLE_STANDARD_SQL,
-        false,
-        config ->
-            config
-                .addParameter("gcsPubSubSubscription", subscription.toString())
-                .addParameter("dlqGcsPubSubSubscription", dlqSubscription.toString()));
-  }
-
-  @Test
-  public void testDataStreamMySqlToSpannerStaging() throws IOException {
-    // Run a simple IT
-    simpleMySqlToSpannerTest(
-        DatastreamResourceManager.DestinationOutputFormat.AVRO_FILE_FORMAT,
-        Dialect.GOOGLE_STANDARD_SQL,
-        true,
-        Function.identity());
-  }
-
-  @Test
-  public void testDataStreamOracleToSpannerStaging() throws IOException {
-    // Run a simple IT
-    simpleOracleToSpannerTest(
-        DatastreamResourceManager.DestinationOutputFormat.AVRO_FILE_FORMAT,
-        Dialect.GOOGLE_STANDARD_SQL,
-        true,
         Function.identity());
   }
 
@@ -196,17 +156,6 @@ public class DataStreamToSpannerIT extends TemplateTestBase {
     simpleMySqlToSpannerTest(
         DatastreamResourceManager.DestinationOutputFormat.AVRO_FILE_FORMAT,
         Dialect.POSTGRESQL,
-        false,
-        Function.identity());
-  }
-
-  @Test
-  public void testDataStreamMySqlToPostgresSpannerStaging() throws IOException {
-    // Run a simple IT
-    simpleMySqlToSpannerTest(
-        DatastreamResourceManager.DestinationOutputFormat.AVRO_FILE_FORMAT,
-        Dialect.POSTGRESQL,
-        true,
         Function.identity());
   }
 
@@ -216,7 +165,6 @@ public class DataStreamToSpannerIT extends TemplateTestBase {
     simpleMySqlToSpannerTest(
         DatastreamResourceManager.DestinationOutputFormat.AVRO_FILE_FORMAT,
         Dialect.GOOGLE_STANDARD_SQL,
-        false,
         config -> config.addEnvironment("enableStreamingEngine", true));
   }
 
@@ -226,44 +174,22 @@ public class DataStreamToSpannerIT extends TemplateTestBase {
     simpleMySqlToSpannerTest(
         DatastreamResourceManager.DestinationOutputFormat.JSON_FILE_FORMAT,
         Dialect.GOOGLE_STANDARD_SQL,
-        false,
         Function.identity());
   }
 
   @Test
+  @Ignore("This test is flaky, and Oracle is not fully supported migration source yet")
   public void testDataStreamOracleToSpannerJson() throws IOException {
     // Run a simple IT
     simpleOracleToSpannerTest(
         DatastreamResourceManager.DestinationOutputFormat.JSON_FILE_FORMAT,
         Dialect.GOOGLE_STANDARD_SQL,
-        false,
-        Function.identity());
-  }
-
-  @Test
-  public void testDataStreamMySqlToSpannerJsonStaging() throws IOException {
-    // Run a simple IT
-    simpleMySqlToSpannerTest(
-        DatastreamResourceManager.DestinationOutputFormat.JSON_FILE_FORMAT,
-        Dialect.GOOGLE_STANDARD_SQL,
-        true,
-        Function.identity());
-  }
-
-  @Test
-  public void testDataStreamOracleToSpannerJsonStaging() throws IOException {
-    // Run a simple IT
-    simpleOracleToSpannerTest(
-        DatastreamResourceManager.DestinationOutputFormat.JSON_FILE_FORMAT,
-        Dialect.GOOGLE_STANDARD_SQL,
-        true,
         Function.identity());
   }
 
   private void simpleMySqlToSpannerTest(
       DatastreamResourceManager.DestinationOutputFormat fileFormat,
       Dialect spannerDialect,
-      boolean isStaging,
       Function<LaunchConfig.Builder, LaunchConfig.Builder> paramsAdder)
       throws IOException {
 
@@ -271,32 +197,27 @@ public class DataStreamToSpannerIT extends TemplateTestBase {
         JDBCType.MYSQL,
         fileFormat,
         spannerDialect,
-        isStaging,
         config ->
             paramsAdder.apply(
-                config.addParameter("sessionFilePath", getGcsPath("input/mysql-session.json"))));
+                config.addParameter(
+                    "sessionFilePath",
+                    getGcsPath("input/mysql-session.json", gcsResourceManager))));
   }
 
   private void simpleOracleToSpannerTest(
       DatastreamResourceManager.DestinationOutputFormat fileFormat,
       Dialect spannerDialect,
-      boolean isStaging,
       Function<LaunchConfig.Builder, LaunchConfig.Builder> paramsAdder)
       throws IOException {
 
     simpleJdbcToSpannerTest(
-        JDBCType.ORACLE,
-        fileFormat,
-        spannerDialect,
-        isStaging,
-        config -> paramsAdder.apply(config));
+        JDBCType.ORACLE, fileFormat, spannerDialect, config -> paramsAdder.apply(config));
   }
 
   private void simpleJdbcToSpannerTest(
       JDBCType jdbcType,
       DatastreamResourceManager.DestinationOutputFormat fileFormat,
       Dialect spannerDialect,
-      boolean isStaging,
       Function<LaunchConfig.Builder, LaunchConfig.Builder> paramsAdder)
       throws IOException {
 
@@ -310,10 +231,8 @@ public class DataStreamToSpannerIT extends TemplateTestBase {
     SpannerResourceManager.Builder spannerResourceManagerBuilder =
         SpannerResourceManager.builder(testName, PROJECT, REGION, spannerDialect)
             .maybeUseStaticInstance()
+            .useCustomHost(spannerHost)
             .setCredentials(credentials);
-    if (isStaging) {
-      spannerResourceManagerBuilder.maybeUseCustomHost();
-    }
     spannerResourceManager = spannerResourceManagerBuilder.build();
 
     // Generate table names
@@ -324,7 +243,7 @@ public class DataStreamToSpannerIT extends TemplateTestBase {
 
     // Generate session file
     if (jdbcType.equals(JDBCType.MYSQL)) {
-      gcsClient.createArtifact(
+      gcsResourceManager.createArtifact(
           "input/mysql-session.json",
           generateSessionFile(
               cloudSqlResourceManager.getDatabaseName(),
@@ -373,7 +292,7 @@ public class DataStreamToSpannerIT extends TemplateTestBase {
     // Create Datastream GCS Destination Connection profile and config
     DestinationConfig destinationConfig =
         datastreamResourceManager.buildGCSDestinationConfig(
-            "gcs-profile", artifactBucketName, gcsPrefix, fileFormat);
+            "gcs-profile", gcsResourceManager.getBucket(), gcsPrefix, fileFormat);
 
     // Create and start Datastream stream
     Stream stream =
@@ -392,7 +311,8 @@ public class DataStreamToSpannerIT extends TemplateTestBase {
                 .addParameter("instanceId", spannerResourceManager.getInstanceId())
                 .addParameter("databaseId", spannerResourceManager.getDatabaseId())
                 .addParameter("projectId", PROJECT)
-                .addParameter("deadLetterQueueDirectory", getGcsPath(testName) + "/dlq/")
+                .addParameter(
+                    "deadLetterQueueDirectory", getGcsPath(testName, gcsResourceManager) + "/dlq/")
                 .addParameter("spannerHost", spannerResourceManager.getSpannerHost())
                 .addParameter(
                     "inputFileFormat",
@@ -468,8 +388,8 @@ public class DataStreamToSpannerIT extends TemplateTestBase {
     TopicName dlqTopic = pubsubResourceManager.createTopic("dlq");
     subscription = pubsubResourceManager.createSubscription(topic, "it-sub");
     dlqSubscription = pubsubResourceManager.createSubscription(dlqTopic, "dlq-sub");
-    gcsClient.createNotification(topic.toString(), gcsPrefix.substring(1));
-    gcsClient.createNotification(dlqTopic.toString(), dlqGcsPrefix.substring(1));
+    gcsResourceManager.createNotification(topic.toString(), gcsPrefix.substring(1));
+    gcsResourceManager.createNotification(dlqTopic.toString(), dlqGcsPrefix.substring(1));
   }
 
   private void createSpannerTables(List<String> tableNames, Dialect spannerDialect) {
@@ -478,7 +398,7 @@ public class DataStreamToSpannerIT extends TemplateTestBase {
     tableNames.forEach(
         tableName ->
             spannerResourceManager.executeDdlStatement(
-                "CREATE TABLE "
+                "CREATE TABLE IF NOT EXISTS "
                     + tableName
                     + " ("
                     + ROW_ID

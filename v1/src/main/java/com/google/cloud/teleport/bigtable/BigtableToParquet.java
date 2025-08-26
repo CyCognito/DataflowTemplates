@@ -108,7 +108,7 @@ public class BigtableToParquet {
         groupName = "Target",
         description = "Output file directory in Cloud Storage",
         helpText =
-            "The path and filename prefix for writing output files. Must end with a slash. DateTime formatting is used to parse the directory path for date and time formatters. For example: gs://your-bucket/your-path.")
+            "The path and filename prefix for writing output files. Must end with a slash. DateTime formatting is used to parse the directory path for date and time formatters. For example: `gs://your-bucket/your-path`.")
     ValueProvider<String> getOutputDirectory();
 
     @SuppressWarnings("unused")
@@ -119,7 +119,7 @@ public class BigtableToParquet {
         groupName = "Target",
         description = "Parquet file prefix",
         helpText =
-            "The prefix of the Parquet file name. For example, \"table1-\". Defaults to: part.")
+            "The prefix of the Parquet file name. For example, `table1-`. Defaults to: `part`.")
     @Default.String("part")
     ValueProvider<String> getFilenamePrefix();
 
@@ -211,18 +211,24 @@ public class BigtableToParquet {
      * Steps: 1) Read records from Bigtable. 2) Convert a Bigtable Row to a GenericRecord. 3) Write
      * GenericRecord(s) to GCS in parquet format.
      */
+    FileIO.Write<Void, GenericRecord> write =
+        FileIO.<GenericRecord>write()
+            .via(ParquetIO.sink(BigtableRow.getClassSchema()))
+            .to(options.getOutputDirectory())
+            .withPrefix(options.getFilenamePrefix())
+            .withSuffix(".parquet");
+    ValueProvider<Integer> numShardsOpt = options.getNumShards();
+    if (numShardsOpt.isAccessible()) {
+      Integer numShards = numShardsOpt.get();
+      if (numShards != null && numShards > 0) {
+        write = write.withNumShards(options.getNumShards());
+      }
+    }
     pipeline
         .apply("Read from Bigtable", read)
         .apply("Transform to Parquet", MapElements.via(new BigtableToParquetFn()))
         .setCoder(AvroCoder.of(GenericRecord.class, BigtableRow.getClassSchema()))
-        .apply(
-            "Write to Parquet in GCS",
-            FileIO.<GenericRecord>write()
-                .via(ParquetIO.sink(BigtableRow.getClassSchema()))
-                .to(options.getOutputDirectory())
-                .withPrefix(options.getFilenamePrefix())
-                .withSuffix(".parquet")
-                .withNumShards(options.getNumShards()));
+        .apply("Write to Parquet in GCS", write);
 
     return pipeline.run();
   }

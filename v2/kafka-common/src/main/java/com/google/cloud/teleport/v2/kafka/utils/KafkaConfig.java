@@ -20,6 +20,7 @@ import com.google.cloud.teleport.v2.kafka.options.KafkaWriteOptions;
 import com.google.cloud.teleport.v2.kafka.options.SchemaRegistryOptions;
 import com.google.cloud.teleport.v2.kafka.values.KafkaAuthenticationMethod;
 import com.google.cloud.teleport.v2.utils.SecretManagerUtils;
+import io.confluent.kafka.schemaregistry.client.SchemaRegistryClientConfig;
 import java.util.HashMap;
 import java.util.Map;
 import org.apache.kafka.clients.CommonClientConfigs;
@@ -43,7 +44,11 @@ public class KafkaConfig {
             options.getKafkaReadKeystorePasswordSecretId(),
             options.getKafkaReadKeyPasswordSecretId(),
             options.getKafkaReadUsernameSecretId(),
-            options.getKafkaReadPasswordSecretId());
+            options.getKafkaReadPasswordSecretId(),
+            options.getKafkaReadSaslScramUsernameSecretId(),
+            options.getKafkaReadSaslScramPasswordSecretId(),
+            options.getKafkaReadSaslScramTruststoreLocation(),
+            options.getKafkaReadSaslScramTruststorePasswordSecretId());
 
     properties.putAll(KafkaCommonUtils.configureKafkaOffsetCommit(options));
 
@@ -59,7 +64,11 @@ public class KafkaConfig {
         options.getKafkaWriteKeystorePasswordSecretId(),
         options.getKafkaWriteKeyPasswordSecretId(),
         options.getKafkaWriteUsernameSecretId(),
-        options.getKafkaWritePasswordSecretId());
+        options.getKafkaWritePasswordSecretId(),
+        options.getKafkaReadSaslScramUsernameSecretId(),
+        options.getKafkaReadSaslScramPasswordSecretId(),
+        options.getKafkaReadSaslScramTruststoreLocation(),
+        options.getKafkaReadSaslScramTruststorePasswordSecretId());
   }
 
   public static Map<String, Object> fromSchemaRegistryOptions(SchemaRegistryOptions options) {
@@ -89,6 +98,26 @@ public class KafkaConfig {
           FileAwareFactoryFn.SECRET_MANAGER_VALUE_PREFIX
               + options.getSchemaRegistryKeyPasswordSecretId());
       properties.put(SslConfigs.SSL_ENDPOINT_IDENTIFICATION_ALGORITHM_CONFIG, "");
+    } else if (options
+        .getSchemaRegistryAuthenticationMode()
+        .equals(KafkaAuthenticationMethod.OAUTH)) {
+      properties.put(
+          SCHEMA_REGISTRY_PREFIX + SchemaRegistryClientConfig.BEARER_AUTH_CREDENTIALS_SOURCE,
+          "OAUTHBEARER");
+      properties.put(
+          SCHEMA_REGISTRY_PREFIX + SchemaRegistryClientConfig.BEARER_AUTH_ISSUER_ENDPOINT_URL,
+          options.getSchemaRegistryOauthTokenEndpointUrl());
+      properties.put(
+          SCHEMA_REGISTRY_PREFIX + SchemaRegistryClientConfig.BEARER_AUTH_CLIENT_ID,
+          options.getSchemaRegistryOauthClientId());
+      properties.put(
+          SCHEMA_REGISTRY_PREFIX + SchemaRegistryClientConfig.BEARER_AUTH_CLIENT_SECRET,
+          SecretManagerUtils.getSecret(options.getSchemaRegistryOauthClientSecretId()));
+      if (options.getSchemaRegistryOauthScope() != null) {
+        properties.put(
+            SCHEMA_REGISTRY_PREFIX + SchemaRegistryClientConfig.BEARER_AUTH_SCOPE,
+            options.getSchemaRegistryOauthScope());
+      }
     }
     return properties;
   }
@@ -101,7 +130,11 @@ public class KafkaConfig {
       String keystorePasswordSecretId,
       String keyPasswordSecretId,
       String usernameSecretId,
-      String passwordSecretId) {
+      String passwordSecretId,
+      String scramUsernameSecretId,
+      String scramPasswordSecretId,
+      String scramTruststoreLocation,
+      String scramTruststorePasswordSecretId) {
     Map<String, Object> properties = new HashMap<>();
     if (authMode == null || authMode.equals(KafkaAuthenticationMethod.NONE)) {
       return properties;
@@ -133,6 +166,22 @@ public class KafkaConfig {
               + " password=\'"
               + SecretManagerUtils.getSecret(passwordSecretId)
               + "\';");
+    } else if (authMode.equals(KafkaAuthenticationMethod.SASL_SCRAM_512)) {
+      properties.put(SaslConfigs.SASL_MECHANISM, "SCRAM-SHA-512");
+      properties.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, "SASL_SSL");
+      properties.put(
+          SaslConfigs.SASL_JAAS_CONFIG,
+          "org.apache.kafka.common.security.scram.ScramLoginModule required"
+              + " username=\'"
+              + SecretManagerUtils.getSecret(scramUsernameSecretId)
+              + "\'"
+              + " password=\'"
+              + SecretManagerUtils.getSecret(scramPasswordSecretId)
+              + "\';");
+      properties.put(SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG, scramTruststoreLocation);
+      properties.put(
+          SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG,
+          FileAwareFactoryFn.SECRET_MANAGER_VALUE_PREFIX + scramTruststorePasswordSecretId);
     } else if (authMode.equals(KafkaAuthenticationMethod.APPLICATION_DEFAULT_CREDENTIALS)) {
       properties.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, "SASL_SSL");
       properties.put(SaslConfigs.SASL_MECHANISM, "OAUTHBEARER");

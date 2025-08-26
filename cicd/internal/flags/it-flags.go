@@ -24,21 +24,24 @@ import (
 
 // Avoid making these vars public.
 var (
-	dRegion                 string
-	dProject                string
-	dArtifactBucket         string
-	dStageBucket            string
-	dHostIp                 string
-	dPrivateConnectivity    string
-	dSpannerHost            string
-	dReleaseMode            bool
-	dRetryFailures          string
-	dCloudProxyHost         string
-	dCloudProxyMySqlPort    string
-	dCloudProxyPostgresPort string
-	dCloudProxyPassword     string
-	dOracleHost             string
-	dCloudOracleSysPassword string
+	dRegion                             string
+	dProject                            string
+	dArtifactBucket                     string
+	dStageBucket                        string
+	dHostIp                             string
+	dPrivateConnectivity                string
+	dSpannerHost                        string
+	dReleaseMode                        bool
+	dRetryFailures                      string
+	dCloudProxyHost                     string
+	dCloudProxyMySqlPort                string
+	dCloudProxyPostgresPort             string
+	dCloudProxyPassword                 string
+	dOracleHost                         string
+	dCloudOracleSysPassword             string
+	dUnifiedWorkerHarnessContainerImage string
+	dIntegrationTestParallelism         string
+	dThreadCount                        string
 )
 
 // Registers all it flags. Must be called before flag.Parse().
@@ -58,6 +61,9 @@ func RegisterItFlags() {
 	flag.StringVar(&dCloudProxyPassword, "it-cloud-proxy-password", "t>5xl%J(&qTK6?FaZ", "Password of static Cloud Auth Proxy")
 	flag.StringVar(&dOracleHost, "it-oracle-host", "10.128.0.90", "Hostname or IP address of static Oracle DB")
 	flag.StringVar(&dCloudOracleSysPassword, "it-oracle-sys-password", "oracle", "sys password of static Oracle DB")
+	flag.StringVar(&dUnifiedWorkerHarnessContainerImage, "it-unified-worker-harness-container-image", "", "Runner harness image to run tests against")
+	flag.StringVar(&dIntegrationTestParallelism, "it-integration-test-parallelism", "3", "The level of parallelism for integration tests")
+	flag.StringVar(&dThreadCount, "it-thread-count", "4", "The IT thread count to use for maven, which is the number of threads per core")
 }
 
 func Region() string {
@@ -99,10 +105,10 @@ func PrivateConnectivity() string {
 }
 
 func SpannerHost() string {
-	if dSpannerHost == "" {
-		return "-DspannerHost=" + "https://staging-wrenchworks.sandbox.googleapis.com/"
+	if dSpannerHost != "" {
+		return "-DspannerHost=" + dSpannerHost
 	}
-	return "-DspannerHost=" + dSpannerHost
+	return ""
 }
 
 func FailureMode() string {
@@ -141,4 +147,23 @@ func StaticOracleHost() string {
 
 func StaticOracleSysPassword() string {
 	return "-DcloudOracleSysPassword=" + dCloudOracleSysPassword
+}
+
+func UnifiedWorkerHarnessContainerImage() string {
+	if dUnifiedWorkerHarnessContainerImage != "" {
+		return "-DunifiedWorkerHarnessContainerImage=" + dUnifiedWorkerHarnessContainerImage
+	}
+	return ""
+}
+
+func IntegrationTestParallelism() int {
+	i := 3
+	fmt.Sscan(dIntegrationTestParallelism, &i)
+	return i
+}
+
+func ThreadCount() int {
+	i := 4
+	fmt.Sscan(dThreadCount, &i)
+	return i
 }

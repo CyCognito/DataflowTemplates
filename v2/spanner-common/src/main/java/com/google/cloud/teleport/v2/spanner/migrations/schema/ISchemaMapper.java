@@ -16,6 +16,7 @@
 package com.google.cloud.teleport.v2.spanner.migrations.schema;
 
 import com.google.cloud.spanner.Dialect;
+import com.google.cloud.teleport.v2.spanner.ddl.annotations.cassandra.CassandraAnnotations;
 import com.google.cloud.teleport.v2.spanner.type.Type;
 import java.io.Serializable;
 import java.util.List;
@@ -72,6 +73,14 @@ public interface ISchemaMapper extends Serializable {
       throws NoSuchElementException;
 
   /**
+   * Retrieves the Spanner column's Cassandra annotation given a spanner table and spanner column.
+   *
+   * @param namespace is currently not operational.
+   */
+  CassandraAnnotations getSpannerColumnCassandraAnnotations(
+      String namespace, String spannerTable, String spannerColumn) throws NoSuchElementException;
+
+  /**
    * Retrieves a list of all column names within a Spanner table.
    *
    * @param namespace is currently not operational.
@@ -85,4 +94,18 @@ public interface ISchemaMapper extends Serializable {
    * @param namespace is currently not operational.
    */
   String getShardIdColumnName(String namespace, String spannerTableName);
+
+  /**
+   * Retrieves the name of the synthetic primary key column for a Spanner table.
+   *
+   * @param namespace is currently not operational.
+   */
+  String getSyntheticPrimaryKeyColName(String namespace, String spannerTableName);
+
+  /**
+   * Returns true if a corresponding source column exists for the provided Spanner column.
+   *
+   * @param namespace is currently not operational.
+   */
+  boolean colExistsAtSource(String namespace, String spannerTable, String spannerColumn);
 }

@@ -34,6 +34,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableSet;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import javax.annotation.Nullable;
@@ -93,8 +94,14 @@ public class Ddl implements Serializable {
   public List<String> tablesReferenced(String tableName) {
     Set<String> tablesReferenced = new HashSet<>();
     Table table = tables.get(tableName.toLowerCase());
-    if (table.interleaveInParent() != null) {
-      tablesReferenced.add(table.interleaveInParent());
+    // Add check if table not found
+    if (table == null) {
+      throw new IllegalStateException(
+          "attempting to fetch table which does not exist in spanner:" + tableName);
+    }
+    if (table.interleavingParent() != null
+        && !Objects.equals(table.interleaveType(), new String("IN"))) {
+      tablesReferenced.add(table.interleavingParent());
     }
     Set<String> fkReferencedTables =
         table.foreignKeys().stream().map(f -> f.referencedTable()).collect(Collectors.toSet());
@@ -102,7 +109,7 @@ public class Ddl implements Serializable {
     return new ArrayList<>(tablesReferenced);
   }
 
-  private void getTablesOrderedByReferenceUtil(
+  private void orderedTablesByReferenceUtil(
       Set<String> visited,
       Set<String> processingTables,
       String tableName,
@@ -117,7 +124,7 @@ public class Ddl implements Serializable {
 
     processingTables.add(tableName.toLowerCase());
     for (String parent : tablesReferenced(tableName)) {
-      getTablesOrderedByReferenceUtil(visited, processingTables, parent, orderedTables);
+      orderedTablesByReferenceUtil(visited, processingTables, parent, orderedTables);
     }
     orderedTables.add(tableName);
     visited.add(tableName.toLowerCase());
@@ -129,8 +136,24 @@ public class Ddl implements Serializable {
     Set<String> visited = new HashSet<>();
     Set<String> processingTables = new HashSet<>();
     for (Table table : allTables()) {
-      getTablesOrderedByReferenceUtil(visited, processingTables, table.name(), orderedTables);
+      orderedTablesByReferenceUtil(visited, processingTables, table.name(), orderedTables);
     }
+    return orderedTables;
+  }
+
+  public List<String> getAllReferencedTables(String tableName) {
+    Table table = tables.get(tableName.toLowerCase());
+    if (!tables.containsKey(tableName.toLowerCase())) {
+      throw new IllegalStateException(
+          "cannot fetch referenced tables for table which does not exist"
+              + " in spanner:"
+              + tableName);
+    }
+    List<String> orderedTables = new LinkedList<>();
+    Set<String> visited = new HashSet<>();
+    Set<String> processingTables = new HashSet<>();
+    orderedTablesByReferenceUtil(visited, processingTables, table.name(), orderedTables);
+    orderedTables.remove(table.name()); // Remove reference of self from list
     return orderedTables;
   }
 
@@ -289,7 +312,7 @@ public class Ddl implements Serializable {
       String name = table.name().toLowerCase();
       tables.put(name, table);
       String parent =
-          table.interleaveInParent() == null ? ROOT : table.interleaveInParent().toLowerCase();
+          table.interleavingParent() == null ? ROOT : table.interleavingParent().toLowerCase();
       parents.put(parent, name);
     }
 

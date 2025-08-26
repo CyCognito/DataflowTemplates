@@ -249,6 +249,40 @@ public class DataStreamToSQL {
     String getCustomConnectionString();
 
     void setCustomConnectionString(String value);
+
+    @TemplateParameter.Integer(
+        order = 15,
+        optional = true,
+        description = "Number of threads to use for Format to DML step.",
+        helpText =
+            "Determines key parallelism of Format to DML step, specifically, the value is passed into Reshuffle.withNumBuckets.")
+    @Default.Integer(100)
+    int getNumThreads();
+
+    void setNumThreads(int value);
+
+    @TemplateParameter.Integer(
+        order = 16,
+        groupName = "Target",
+        optional = true,
+        description = "Database login timeout in seconds.",
+        helpText =
+            "The timeout in seconds for database login attempts. This helps prevent connection hangs when multiple workers try to connect simultaneously.")
+    Integer getDatabaseLoginTimeout();
+
+    void setDatabaseLoginTimeout(Integer value);
+
+    @TemplateParameter.Boolean(
+        order = 17,
+        optional = true,
+        description =
+            "Order by configurations for data should include prioritizing data which is not deleted.",
+        helpText =
+            "Order by configurations for data should include prioritizing data which is not deleted.")
+    @Default.Boolean(false)
+    Boolean getOrderByIncludesIsDeleted();
+
+    void setOrderByIncludesIsDeleted(Boolean value);
   }
 
   /**
@@ -304,7 +338,8 @@ public class DataStreamToSQL {
         CdcJdbcIO.DataSourceConfiguration.create(jdbcDriverName, jdbcDriverConnectionString)
             .withUsername(options.getDatabaseUser())
             .withPassword(options.getDatabasePassword())
-            .withMaxIdleConnections(new Integer(0));
+            .withMaxIdleConnections(new Integer(0))
+            .withLoginTimeout(options.getDatabaseLoginTimeout());
 
     return dataSourceConfiguration;
   }
@@ -327,13 +362,33 @@ public class DataStreamToSQL {
     }
   }
 
-  /** Parse the SchemaMap config which allows key:value pairs of column naming configs. */
-  public static Map<String, String> parseSchemaMap(String schemaMapString) {
-    if (schemaMapString == null || schemaMapString.equals("")) {
-      return new HashMap<>();
-    }
+  /**
+   * Parses a single map string and resolves it into schema and table mappings, intelligently
+   * inferring a schema-to-schema mapping if only table-specific rules are provided.
+   *
+   * @param mappingString A comma-separated string of mapping rules.
+   */
+  public static Map<String, Map<String, String>> parseMappings(String mappingString) {
+    Map<String, String> schemaMappings = new HashMap<>();
+    Map<String, String> tableMappings = new HashMap<>();
 
-    return Splitter.on(",").withKeyValueSeparator(":").split(schemaMapString);
+    if (mappingString != null && !mappingString.isEmpty()) {
+      Map<String, String> allMappings =
+          Splitter.on("|").withKeyValueSeparator(":").split(mappingString);
+
+      // Strictly separate rules based on the presence of a dot.
+      for (Map.Entry<String, String> entry : allMappings.entrySet()) {
+        if (entry.getKey().contains(".")) {
+          tableMappings.put(entry.getKey(), entry.getValue());
+        } else {
+          schemaMappings.put(entry.getKey(), entry.getValue());
+        }
+      }
+    }
+    Map<String, Map<String, String>> mappings = new HashMap<>();
+    mappings.put("schemas", schemaMappings);
+    mappings.put("tables", tableMappings);
+    return mappings;
   }
 
   /**
@@ -345,22 +400,27 @@ public class DataStreamToSQL {
   public static PipelineResult run(Options options) {
     /*
      * Stages:
-     *   1) Ingest and Normalize Data to FailsafeElement with JSON Strings
-     *   2) Write JSON Strings to SQL DML Objects
-     *   3) Filter stale rows using stateful PK transform
-     *   4) Write DML statements to SQL Database via jdbc
+     * 1) Ingest and Normalize Data to FailsafeElement with JSON Strings
+     * 2) Write JSON Strings to SQL DML Objects
+     * 3) Filter stale rows using stateful PK transform
+     * 4) Write DML statements to SQL Database via jdbc
      */
 
     Pipeline pipeline = Pipeline.create(options);
 
     CdcJdbcIO.DataSourceConfiguration dataSourceConfiguration = getDataSourceConfiguration(options);
     validateOptions(options, dataSourceConfiguration);
-    Map<String, String> schemaMap = parseSchemaMap(options.getSchemaMap());
+
+    Map<String, Map<String, String>> mappings = parseMappings(options.getSchemaMap());
+    Map<String, String> schemaMap = mappings.get("schemas");
+    Map<String, String> tableNameMap = mappings.get("tables");
+
     LOG.info("Parsed schema map: {}", schemaMap);
+    LOG.info("Parsed table name map: {}", tableNameMap);
 
     /*
      * Stage 1: Ingest and Normalize Data to FailsafeElement with JSON Strings
-     *   a) Read DataStream data from GCS into JSON String FailsafeElements (datastreamJsonRecords)
+     * a) Read DataStream data from GCS into JSON String FailsafeElements (datastreamJsonRecords)
      */
     PCollection<FailsafeElement<String, String>> datastreamJsonRecords =
         pipeline.apply(
@@ -376,12 +436,18 @@ public class DataStreamToSQL {
 
     /*
      * Stage 2: Write JSON Strings to SQL Insert Strings
-     *   a) Convert JSON String FailsafeElements to TableRow's (tableRowRecords)
+     * a) Convert JSON String FailsafeElements to TableRow's (tableRowRecords)
      * Stage 3) Filter stale rows using stateful PK transform
      */
     PCollection<KV<String, DmlInfo>> dmlStatements =
         datastreamJsonRecords
-            .apply("Format to DML", CreateDml.of(dataSourceConfiguration).withSchemaMap(schemaMap))
+            .apply(
+                "Format to DML",
+                CreateDml.of(dataSourceConfiguration)
+                    .withSchemaMap(schemaMap)
+                    .withTableNameMap(tableNameMap)
+                    .withOrderByIncludesIsDeleted(options.getOrderByIncludesIsDeleted())
+                    .withNumThreads(options.getNumThreads()))
             .apply("DML Stateful Processing", ProcessDml.statefulOrderByPK());
 
     /*

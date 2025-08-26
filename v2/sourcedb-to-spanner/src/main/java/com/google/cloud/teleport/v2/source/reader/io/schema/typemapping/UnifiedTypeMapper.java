@@ -15,7 +15,9 @@
  */
 package com.google.cloud.teleport.v2.source.reader.io.schema.typemapping;
 
+import com.google.cloud.teleport.v2.source.reader.io.cassandra.mappings.CassandraMappingsProvider;
 import com.google.cloud.teleport.v2.source.reader.io.schema.typemapping.provider.MysqlMappingProvider;
+import com.google.cloud.teleport.v2.source.reader.io.schema.typemapping.provider.PostgreSQLMappingProvider;
 import com.google.cloud.teleport.v2.source.reader.io.schema.typemapping.provider.unified.Unsupported;
 import com.google.cloud.teleport.v2.spanner.migrations.schema.SourceColumnType;
 import com.google.common.collect.ImmutableMap;
@@ -32,11 +34,16 @@ import org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.base.Precondit
 public final class UnifiedTypeMapper {
 
   /**
-   * A static map of the type mappings for all source database types constructed at class load time.
-   * TODO(vardhanvthigle): Support other mappings beyond Mysql.
+   * A static map of the type MAPPINGS for all source database types constructed at class load time.
    */
   private static final ImmutableMap<MapperType, ImmutableMap<String, UnifiedTypeMapping>> mappers =
-      ImmutableMap.of(MapperType.MYSQL, MysqlMappingProvider.getMapping());
+      ImmutableMap.of(
+          MapperType.MYSQL,
+          MysqlMappingProvider.getMapping(),
+          MapperType.POSTGRESQL,
+          PostgreSQLMappingProvider.getMapping(),
+          MapperType.CASSANDRA,
+          CassandraMappingsProvider.getMapping());
 
   private final MapperType mapperType;
 
@@ -81,6 +88,9 @@ public final class UnifiedTypeMapper {
         : SchemaBuilder.builder().unionOf().nullType().and().type(schema).endUnion();
   }
 
+  /*
+   * TODO(vardhanvthigle): Handle Nested collections.
+   */
   private Schema getBasicSchema(SourceColumnType columnType) {
     return mappers
         .get(this.mapperType)
@@ -93,6 +103,7 @@ public final class UnifiedTypeMapper {
     MYSQL,
     POSTGRESQL,
     ORACLE,
-    SQLSERVER
+    SQLSERVER,
+    CASSANDRA
   }
 }

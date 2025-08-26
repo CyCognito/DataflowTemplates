@@ -55,6 +55,7 @@ import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.Write.CreateDisposition;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.Write.WriteDisposition;
 import org.apache.beam.sdk.io.gcp.bigquery.InsertRetryPolicy;
+import org.apache.beam.sdk.io.gcp.bigquery.TableDestination;
 import org.apache.beam.sdk.io.gcp.bigquery.WriteResult;
 import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.PipelineOptions;
@@ -65,11 +66,14 @@ import org.apache.beam.sdk.transforms.Flatten;
 import org.apache.beam.sdk.transforms.MapElements;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.Reshuffle;
+import org.apache.beam.sdk.transforms.SerializableFunction;
+import org.apache.beam.sdk.transforms.SimpleFunction;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionList;
 import org.apache.beam.sdk.values.PCollectionTuple;
 import org.apache.beam.sdk.values.TupleTag;
+import org.apache.beam.sdk.values.ValueInSingleWindow;
 import org.joda.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -149,7 +153,7 @@ public class DataStreamToBigQuery {
         groupName = "Source",
         description = "File location for Datastream file output in Cloud Storage.",
         helpText =
-            "The file location for Datastream file output in Cloud Storage, in the format: gs://<BUCKET_NAME>/<ROOT_PATH>/.")
+            "The file location for Datastream file output in Cloud Storage, in the format `gs://<BUCKET_NAME>/<ROOT_PATH>/`.")
     String getInputFilePattern();
 
     void setInputFilePattern(String value);
@@ -159,7 +163,7 @@ public class DataStreamToBigQuery {
         enumOptions = {@TemplateEnumOption("avro"), @TemplateEnumOption("json")},
         description = "Datastream output file format (avro/json).",
         helpText =
-            "The format of the output files produced by Datastream. Value can be 'avro' or 'json'. Defaults to: avro.")
+            "The format of the output files produced by Datastream. Allowed values are `avro` and `json`. Defaults to `avro`.")
     @Default.String("avro")
     String getInputFileFormat();
 
@@ -169,7 +173,7 @@ public class DataStreamToBigQuery {
         order = 3,
         description = "The Pub/Sub subscription on the Cloud Storage bucket.",
         helpText =
-            "The Pub/Sub subscription used by Cloud Storage to notify Dataflow of new files available for processing, in the format: projects/<PROJECT_ID>/subscriptions/<SUBSCRIPTION_NAME>.")
+            "The Pub/Sub subscription used by Cloud Storage to notify Dataflow of new files available for processing, in the format: `projects/<PROJECT_ID>/subscriptions/<SUBSCRIPTION_NAME>`.")
     String getGcsPubSubSubscription();
 
     void setGcsPubSubSubscription(String value);
@@ -191,7 +195,7 @@ public class DataStreamToBigQuery {
             "The starting DateTime used to fetch from Cloud Storage "
                 + "(https://tools.ietf.org/html/rfc3339).",
         helpText =
-            "The starting DateTime to use to fetch data from Cloud Storage (https://tools.ietf.org/html/rfc3339). Defaults to: 1970-01-01T00:00:00.00Z.")
+            "The starting DateTime to use to fetch data from Cloud Storage (https://tools.ietf.org/html/rfc3339). Defaults to: `1970-01-01T00:00:00.00Z`.")
     @Default.String("1970-01-01T00:00:00.00Z")
     String getRfcStartDateTime();
 
@@ -201,7 +205,7 @@ public class DataStreamToBigQuery {
         order = 6,
         optional = true,
         description = "File read concurrency",
-        helpText = "The number of concurrent DataStream files to read. Default is 10.")
+        helpText = "The number of concurrent DataStream files to read. Default is `10`.")
     @Default.Integer(10)
     Integer getFileReadConcurrency();
 
@@ -223,7 +227,7 @@ public class DataStreamToBigQuery {
         groupName = "Target",
         description = "Name or template for the dataset to contain staging tables.",
         helpText =
-            "The name of the dataset that contains staging tables. This parameter supports templates, for example {_metadata_dataset}_log or my_dataset_log. Normally, this parameter is a dataset name. Defaults to: {_metadata_dataset}.")
+            "The name of the dataset that contains staging tables. This parameter supports templates, for example `{_metadata_dataset}_log` or `my_dataset_log`. Normally, this parameter is a dataset name. Defaults to `{_metadata_dataset}`. Note: For MySQL sources, the database name is mapped to `{_metadata_schema}` instead of `{_metadata_dataset}`.")
     @Default.String("{_metadata_dataset}")
     String getOutputStagingDatasetTemplate();
 
@@ -235,7 +239,7 @@ public class DataStreamToBigQuery {
         groupName = "Target",
         description = "Template for the name of staging tables.",
         helpText =
-            "The template to use to name the staging tables. For example, {_metadata_table}). Defaults to: {_metadata_table}_log.")
+            "The template to use to name the staging tables. For example, `{_metadata_table}`. Defaults to `{_metadata_table}_log`.")
     @Default.String("{_metadata_table}_log")
     String getOutputStagingTableNameTemplate();
 
@@ -246,7 +250,7 @@ public class DataStreamToBigQuery {
         groupName = "Target",
         description = "Template for the dataset to contain replica tables.",
         helpText =
-            "The name of the dataset that contains the replica tables. This parameter supports templates, for example {_metadata_dataset} or my_dataset. Normally, this parameter is a dataset name. Defaults to: {_metadata_dataset}.")
+            "The name of the dataset that contains the replica tables. This parameter supports templates, for example `{_metadata_dataset}` or `my_dataset`. Normally, this parameter is a dataset name. Defaults to `{_metadata_dataset}`. Note: For MySQL sources, the database name is mapped to `{_metadata_schema}` instead of `{_metadata_dataset}`.")
     @Default.String("{_metadata_dataset}")
     String getOutputDatasetTemplate();
 
@@ -258,7 +262,7 @@ public class DataStreamToBigQuery {
         optional = true,
         description = "Template for the name of replica tables.",
         helpText =
-            "The template to use for the name of the replica tables, for example {_metadata_table}. Defaults to: {_metadata_table}.")
+            "The template to use for the name of the replica tables, for example `{_metadata_table}`. Defaults to `{_metadata_table}`.")
     @Default.String("{_metadata_table}")
     String getOutputTableNameTemplate();
 
@@ -269,7 +273,7 @@ public class DataStreamToBigQuery {
         optional = true,
         description = "Fields to be ignored",
         helpText =
-            "Comma-separated fields to ignore in BigQuery. Defaults to: _metadata_stream,_metadata_schema,_metadata_table,_metadata_source,_metadata_tx_id,_metadata_dlq_reconsumed,_metadata_primary_keys,_metadata_error,_metadata_retry_count.",
+            "Comma-separated fields to ignore in BigQuery. Defaults to: `_metadata_stream,_metadata_schema,_metadata_table,_metadata_source,_metadata_tx_id,_metadata_dlq_reconsumed,_metadata_primary_keys,_metadata_error,_metadata_retry_count`.",
         example = "_metadata_stream,_metadata_schema")
     @Default.String(
         "_metadata_stream,_metadata_schema,_metadata_table,_metadata_source,"
@@ -283,7 +287,7 @@ public class DataStreamToBigQuery {
         order = 13,
         optional = true,
         description = "The number of minutes between merges for a given table",
-        helpText = "The number of minutes between merges for a given table. Defaults to: 5.")
+        helpText = "The number of minutes between merges for a given table. Defaults to `5`.")
     @Default.Integer(5)
     Integer getMergeFrequencyMinutes();
 
@@ -293,7 +297,7 @@ public class DataStreamToBigQuery {
         order = 14,
         description = "Dead letter queue directory.",
         helpText =
-            "The path that Dataflow uses to write the dead-letter queue output. This path must not be in the same path as the Datastream file output. Defaults to empty.")
+            "The path that Dataflow uses to write the dead-letter queue output. This path must not be in the same path as the Datastream file output. Defaults to `empty`.")
     @Default.String("")
     String getDeadLetterQueueDirectory();
 
@@ -303,7 +307,7 @@ public class DataStreamToBigQuery {
         order = 15,
         optional = true,
         description = "The number of minutes between DLQ Retries.",
-        helpText = "The number of minutes between DLQ Retries. Defaults to: 10.")
+        helpText = "The number of minutes between DLQ Retries. Defaults to `10`.")
     @Default.Integer(10)
     Integer getDlqRetryMinutes();
 
@@ -323,7 +327,7 @@ public class DataStreamToBigQuery {
         order = 17,
         optional = true,
         description = "A switch to disable MERGE queries for the job.",
-        helpText = "Whether to disable MERGE queries for the job. Defaults to: true.")
+        helpText = "Whether to disable MERGE queries for the job. Defaults to `true`.")
     @Default.Boolean(true)
     Boolean getApplyMerge();
 
@@ -336,7 +340,7 @@ public class DataStreamToBigQuery {
         parentTriggerValues = {"true"},
         description = "Concurrent queries for merge.",
         helpText =
-            "The number of concurrent BigQuery MERGE queries. Only effective when applyMerge is set to true. Defaults to: 30.")
+            "The number of concurrent BigQuery MERGE queries. Only effective when applyMerge is set to true. Defaults to `30`.")
     @Default.Integer(MergeConfiguration.DEFAULT_MERGE_CONCURRENCY)
     Integer getMergeConcurrency();
 
@@ -347,7 +351,7 @@ public class DataStreamToBigQuery {
         optional = true,
         description = "Partition retention days.",
         helpText =
-            "The number of days to use for partition retention when running BigQuery merges. Defaults to: 1.")
+            "The number of days to use for partition retention when running BigQuery merges. Defaults to `1`.")
     @Default.Integer(MergeConfiguration.DEFAULT_PARTITION_RETENTION_DAYS)
     Integer getPartitionRetentionDays();
 
@@ -360,7 +364,7 @@ public class DataStreamToBigQuery {
         parentTriggerValues = {"true"},
         description = "Use at at-least-once semantics in BigQuery Storage Write API",
         helpText =
-            "This parameter takes effect only if \"Use BigQuery Storage Write API\" is enabled. If true, at-least-once semantics are used for the Storage Write API. Otherwise, exactly-once semantics are used. Defaults to: false.",
+            "This parameter takes effect only if `Use BigQuery Storage Write API` is enabled. If `true`, at-least-once semantics are used for the Storage Write API. Otherwise, exactly-once semantics are used. Defaults to `false`.",
         hiddenUi = true)
     @Default.Boolean(false)
     @Override
@@ -517,32 +521,77 @@ public class DataStreamToBigQuery {
     // TODO(beam 2.23): InsertRetryPolicy should be CDC compliant
     Set<String> fieldsToIgnore = getFieldsToIgnore(options.getIgnoreFields());
 
-    WriteResult writeResult =
-        shuffledTableRows
-            .apply(
-                "Map to Staging Tables",
-                new DataStreamMapper(
-                        options.as(GcpOptions.class),
-                        options.getOutputProjectId(),
-                        options.getOutputStagingDatasetTemplate(),
-                        options.getOutputStagingTableNameTemplate())
-                    .withDataStreamRootUrl(options.getDataStreamRootUrl())
-                    .withDefaultSchema(BigQueryDefaultSchemas.DATASTREAM_METADATA_SCHEMA)
-                    .withDayPartitioning(true)
-                    .withIgnoreFields(fieldsToIgnore))
-            .apply(
-                "Write Successful Records",
-                BigQueryIO.<KV<TableId, TableRow>>write()
-                    .to(new BigQueryDynamicConverters().bigQueryDynamicDestination())
-                    .withFormatFunction(
-                        element -> removeTableRowFields(element.getValue(), fieldsToIgnore))
-                    .withFormatRecordOnFailureFunction(element -> element.getValue())
-                    .withoutValidation()
-                    .ignoreInsertIds()
-                    .withCreateDisposition(CreateDisposition.CREATE_NEVER)
-                    .withWriteDisposition(WriteDisposition.WRITE_APPEND)
-                    .withExtendedErrorInfo() // takes effect only when Storage Write API is off
-                    .withFailedInsertRetryPolicy(InsertRetryPolicy.retryTransientErrors()));
+    PCollection<KV<TableId, TableRow>> mappedStagingRecords =
+        shuffledTableRows.apply(
+            "Map to Staging Tables",
+            new DataStreamMapper(
+                    options.as(GcpOptions.class),
+                    options.getOutputProjectId(),
+                    options.getOutputStagingDatasetTemplate(),
+                    options.getOutputStagingTableNameTemplate())
+                .withDataStreamRootUrl(options.getDataStreamRootUrl())
+                .withDefaultSchema(BigQueryDefaultSchemas.DATASTREAM_METADATA_SCHEMA)
+                .withDayPartitioning(true)
+                .withIgnoreFields(fieldsToIgnore));
+
+    WriteResult writeResult;
+    if (options.getUseStorageWriteApi()) {
+      // SerializableCoder(com.google.cloud.bigquery.TableId) is not a deterministic key coder.
+      // So we have to convert tableid to a string.
+      writeResult =
+          mappedStagingRecords
+              .apply(
+                  "TableId to String",
+                  MapElements.via(
+                      new SimpleFunction<KV<TableId, TableRow>, KV<String, TableRow>>() {
+                        @Override
+                        public KV<String, TableRow> apply(KV<TableId, TableRow> input) {
+                          TableId tableId = input.getKey();
+                          String projectId = tableId.getProject();
+                          if (projectId == null) {
+                            projectId = bigqueryProjectId;
+                          }
+                          return KV.of(
+                              String.format(
+                                  "%s:%s.%s", projectId, tableId.getDataset(), tableId.getTable()),
+                              input.getValue());
+                        }
+                      }))
+              .apply(
+                  "Write Successful Records",
+                  BigQueryIO.<KV<String, TableRow>>write()
+                      .to(
+                          (SerializableFunction<
+                                  ValueInSingleWindow<KV<String, TableRow>>, TableDestination>)
+                              value -> {
+                                String tableSpec = value.getValue().getKey();
+                                return new TableDestination(tableSpec, "Table for " + tableSpec);
+                              })
+                      .withFormatFunction(
+                          element -> removeTableRowFields(element.getValue(), fieldsToIgnore))
+                      .withFormatRecordOnFailureFunction(element -> element.getValue())
+                      .withoutValidation()
+                      .ignoreInsertIds()
+                      .ignoreUnknownValues()
+                      .withCreateDisposition(CreateDisposition.CREATE_NEVER)
+                      .withWriteDisposition(WriteDisposition.WRITE_APPEND));
+    } else {
+      writeResult =
+          mappedStagingRecords.apply(
+              "Write Successful Records",
+              BigQueryIO.<KV<TableId, TableRow>>write()
+                  .to(new BigQueryDynamicConverters().bigQueryDynamicDestination())
+                  .withFormatFunction(
+                      element -> removeTableRowFields(element.getValue(), fieldsToIgnore))
+                  .withFormatRecordOnFailureFunction(element -> element.getValue())
+                  .withoutValidation()
+                  .ignoreInsertIds()
+                  .ignoreUnknownValues()
+                  .withCreateDisposition(CreateDisposition.CREATE_NEVER)
+                  .withWriteDisposition(WriteDisposition.WRITE_APPEND)
+                  .withExtendedErrorInfo() // takes effect only when Storage Write API is off
+                  .withFailedInsertRetryPolicy(InsertRetryPolicy.retryTransientErrors()));
+    }
 
     if (options.getApplyMerge()) {
       shuffledTableRows

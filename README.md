@@ -13,12 +13,27 @@ their functionality.
 
 [![Open in Cloud Shell](http://gstatic.com/cloudssh/images/open-btn.svg)](https://console.cloud.google.com/cloudshell/editor?cloudshell_git_repo=https%3A%2F%2Fgithub.com%2FGoogleCloudPlatform%2FDataflowTemplates.git)
 
+## Status
+
+[![Bigtable PR](https://github.com/GoogleCloudPlatform/DataflowTemplates/actions/workflows/bigtable-pr.yml/badge.svg?event=schedule&&?branch=main)](https://github.com/GoogleCloudPlatform/DataflowTemplates/actions?query=workflow%3A%22Bigtable+PR%22+branch%3Amain+event%3Aschedule)
+[![Datastream PR](https://github.com/GoogleCloudPlatform/DataflowTemplates/actions/workflows/datastream-pr.yml/badge.svg?event=schedule&&?branch=main)](https://github.com/GoogleCloudPlatform/DataflowTemplates/actions?query=workflow%3A%22Datastream+PR%22+branch%3Amain+event%3Aschedule)
+[![Java PR](https://github.com/GoogleCloudPlatform/DataflowTemplates/actions/workflows/java-pr.yml/badge.svg?event=schedule&&?branch=main)](https://github.com/GoogleCloudPlatform/DataflowTemplates/actions?query=workflow%3A%22Java+PR%22+branch%3Amain+event%3Aschedule)
+[![Kafka PR](https://github.com/GoogleCloudPlatform/DataflowTemplates/actions/workflows/kafka-pr.yml/badge.svg?event=schedule&&?branch=main)](https://github.com/GoogleCloudPlatform/DataflowTemplates/actions?query=workflow%3A%22Kafka+PR%22+branch%3Amain+event%3Aschedule)
+[![Load Tests](https://github.com/GoogleCloudPlatform/DataflowTemplates/actions/workflows/load-tests.yml/badge.svg?event=schedule&&?branch=main)](https://github.com/GoogleCloudPlatform/DataflowTemplates/actions?query=workflow%3A%22Load+Tests%22+branch%3Amain+event%3Aschedule)
+[![Run IT Tests with Beam Snapshots](https://github.com/GoogleCloudPlatform/DataflowTemplates/actions/workflows/run-it-tests-beam-snapshots.yml/badge.svg?event=schedule&&?branch=main)](https://github.com/GoogleCloudPlatform/DataflowTemplates/actions?query=workflow%3A%22Run+IT+Tests+with+Beam+Snapshots%22+branch%3Amain+event%3Aschedule)
+[![Spanner Load Tests](https://github.com/GoogleCloudPlatform/DataflowTemplates/actions/workflows/spanner-load-tests.yml/badge.svg?event=schedule&&?branch=main)](https://github.com/GoogleCloudPlatform/DataflowTemplates/actions?query=workflow%3A%22Spanner+Load+Tests%22+branch%3Amain+event%3Aschedule)
+[![Spanner PR](https://github.com/GoogleCloudPlatform/DataflowTemplates/actions/workflows/spanner-pr.yml/badge.svg?event=schedule&&?branch=main)](https://github.com/GoogleCloudPlatform/DataflowTemplates/actions?query=workflow%3A%22Spanner+PR%22+branch%3Amain+event%3Aschedule)
+
 ## Note on Default Branch
 
 As of November 18, 2021, our default branch is now named `main`. This does not
 affect forks. If you would like your fork and its local clone to reflect these
 changes you can
 follow [GitHub's branch renaming guide](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-branches-in-your-repository/renaming-a-branch).
+
+## Getting Help
+
+- Have a bug or a feature request? Please file [a GitHub issue](https://github.com/GoogleCloudPlatform/DataflowTemplates/issues/new/choose).
 
 ## Template Pipelines
 
@@ -41,7 +56,7 @@ follow [GitHub's branch renaming guide](https://docs.github.com/en/repositories/
     - [Kafka to BigQuery](https://github.com/search?q=repo%3AGoogleCloudPlatform%2FDataflowTemplates%20Kafka_to_BigQuery&type=code)
     - [Kafka to Cloud Storage](https://github.com/search?q=repo%3AGoogleCloudPlatform%2FDataflowTemplates%20Kafka_to_GCS&type=code)
     - [Kinesis To Pubsub](https://github.com/search?q=repo%3AGoogleCloudPlatform%2FDataflowTemplates%20Kinesis_To_Pubsub&type=code)
-    - [MongoDB to BigQuery (CDC)](https://github.com/search?q=repo%3AGoogleCloudPlatform%2FDataflowTemplates%20MongoDB_to_BigQuery_CDC&type=code)
+    - [MongoDB (CDC) to BigQuery](https://github.com/search?q=repo%3AGoogleCloudPlatform%2FDataflowTemplates%20MongoDB_to_BigQuery_CDC&type=code)
     - [Mqtt to Pubsub](https://github.com/search?q=repo%3AGoogleCloudPlatform%2FDataflowTemplates%20Mqtt_to_PubSub&type=code)
     - [Ordered change stream buffer to Source DB](https://github.com/search?q=repo%3AGoogleCloudPlatform%2FDataflowTemplates%20Ordered_Changestream_Buffer_to_Sourcedb&type=code)
     - [Pub/Sub Avro to BigQuery](https://github.com/search?q=repo%3AGoogleCloudPlatform%2FDataflowTemplates%20PubSub_Avro_to_BigQuery&type=code)

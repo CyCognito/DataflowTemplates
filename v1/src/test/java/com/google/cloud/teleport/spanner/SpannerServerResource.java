@@ -27,15 +27,21 @@ import com.google.cloud.spanner.SpannerException;
 import com.google.cloud.spanner.SpannerOptions;
 import com.google.cloud.spanner.TransactionContext;
 import com.google.cloud.spanner.TransactionRunner;
+import com.google.cloud.spanner.admin.instance.v1.InstanceAdminClient;
 import com.google.cloud.teleport.spanner.ddl.Ddl;
 import com.google.cloud.teleport.spanner.ddl.RandomInsertMutationGenerator;
+import com.google.cloud.teleport.spanner.spannerio.MutationGroup;
+import com.google.cloud.teleport.spanner.spannerio.SpannerConfig;
 import com.google.protobuf.ByteString;
 import com.google.spanner.admin.database.v1.GetDatabaseDdlResponse;
+import com.google.spanner.admin.instance.v1.CreateInstancePartitionRequest;
+import com.google.spanner.admin.instance.v1.InstanceConfigName;
+import com.google.spanner.admin.instance.v1.InstanceName;
+import com.google.spanner.admin.instance.v1.InstancePartition;
+import com.google.spanner.admin.instance.v1.InstancePartitionName;
 import java.util.Arrays;
 import java.util.Iterator;
 import javax.annotation.Nullable;
-import org.apache.beam.sdk.io.gcp.spanner.MutationGroup;
-import org.apache.beam.sdk.io.gcp.spanner.SpannerConfig;
 import org.apache.beam.sdk.options.ValueProvider;
 import org.junit.rules.ExternalResource;
 
@@ -51,6 +57,7 @@ public class SpannerServerResource extends ExternalResource {
 
   private Spanner client;
   private DatabaseAdminClient databaseAdminClient;
+  private InstanceAdminClient instanceAdminClient;
 
   public SpannerServerResource() {
     this.projectId = System.getProperty("projectId", DEFAULT_PROJECT_ID);
@@ -71,11 +78,17 @@ public class SpannerServerResource extends ExternalResource {
     }
     client = spannerOptions.getService();
     databaseAdminClient = client.getDatabaseAdminClient();
+    instanceAdminClient = client.createInstanceAdminClient();
   }
 
   @Override
   protected void after() {
-    client.close();
+    if (!client.isClosed()) {
+      client.close();
+    }
+    if (!instanceAdminClient.isShutdown()) {
+      instanceAdminClient.shutdown();
+    }
   }
 
   private Database buildDatabase(String dbName, ByteString protoDescriptors) {
@@ -187,5 +200,33 @@ public class SpannerServerResource extends ExternalResource {
             }
           });
     }
+  }
+
+  public void createInstancePartition(String instancePartitionId, String instanceConfigId)
+      throws Exception {
+    InstancePartition instancePartition =
+        InstancePartition.newBuilder()
+            .setDisplayName("mr partition")
+            .setNodeCount(1)
+            .setConfig(InstanceConfigName.of(projectId, instanceConfigId).toString())
+            .build();
+
+    InstancePartition ip =
+        instanceAdminClient
+            .createInstancePartitionAsync(
+                CreateInstancePartitionRequest.newBuilder()
+                    .setParent(InstanceName.of(projectId, instanceId).toString())
+                    .setInstancePartitionId(instancePartitionId)
+                    .setInstancePartition(instancePartition)
+                    .build())
+            .get();
+  }
+
+  public void deleteInstancePartition(String instancePartitionId) throws Exception {
+    if (client.isClosed()) {
+      before();
+    }
+    instanceAdminClient.deleteInstancePartition(
+        InstancePartitionName.of(projectId, instanceId, instancePartitionId).toString());
   }
 }

@@ -16,8 +16,12 @@
 package com.google.cloud.teleport.v2.source.reader.io.schema;
 
 import com.google.auto.value.AutoValue;
+import com.google.cloud.teleport.v2.source.reader.io.jdbc.uniformsplitter.range.BoundaryExtractorFactory;
 import com.google.cloud.teleport.v2.source.reader.io.jdbc.uniformsplitter.stringmapper.CollationReference;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableMap;
+import java.math.BigDecimal;
+import java.sql.Timestamp;
 import javax.annotation.Nullable;
 
 @AutoValue
@@ -84,7 +88,7 @@ public abstract class SourceColumnIndexInfo implements Comparable<SourceColumnIn
    * @return builder.
    */
   public static Builder builder() {
-    return new AutoValue_SourceColumnIndexInfo.Builder();
+    return new AutoValue_SourceColumnIndexInfo.Builder().setCardinality(0L);
   }
 
   @Override
@@ -135,8 +139,19 @@ public abstract class SourceColumnIndexInfo implements Comparable<SourceColumnIn
 
   public enum IndexType {
     NUMERIC,
+    BIG_INT_UNSIGNED,
+    BINARY,
     STRING,
-    DATE_TIME,
+    TIME_STAMP,
     OTHER
   };
+
+  // TODO(vardhanvthigle): handle other types
+  public static final ImmutableMap<IndexType, Class> INDEX_TYPE_TO_CLASS =
+      ImmutableMap.of(
+          IndexType.NUMERIC, Long.class,
+          IndexType.STRING, String.class,
+          IndexType.BIG_INT_UNSIGNED, BigDecimal.class,
+          IndexType.BINARY, BoundaryExtractorFactory.BYTE_ARRAY_CLASS,
+          IndexType.TIME_STAMP, Timestamp.class);
 }

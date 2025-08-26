@@ -17,6 +17,10 @@
  */
 package org.apache.beam.it.gcp;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.api.gax.core.CredentialsProvider;
 import com.google.api.gax.core.FixedCredentialsProvider;
 import com.google.api.services.dataflow.model.Job;
@@ -24,15 +28,21 @@ import com.google.auth.Credentials;
 import com.google.cloud.bigquery.TableId;
 import com.google.cloud.teleport.metadata.DirectRunnerTest;
 import com.google.cloud.teleport.metadata.MultiTemplateIntegrationTest;
+import com.google.cloud.teleport.metadata.SkipRunnerV2Test;
 import com.google.cloud.teleport.metadata.Template;
 import com.google.cloud.teleport.metadata.Template.TemplateType;
 import com.google.cloud.teleport.metadata.TemplateCreationParameter;
 import com.google.cloud.teleport.metadata.TemplateCreationParameters;
 import com.google.cloud.teleport.metadata.TemplateIntegrationTest;
 import com.google.cloud.teleport.metadata.util.MetadataUtils;
+import com.google.common.collect.ImmutableList;
+import com.google.common.io.CharStreams;
 import java.io.File;
 import java.io.IOException;
+import java.io.Reader;
 import java.lang.reflect.Method;
+import java.nio.channels.Channels;
+import java.nio.channels.ReadableByteChannel;
 import java.text.SimpleDateFormat;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -41,6 +51,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.ExecutionException;
 import org.apache.beam.it.common.PipelineLauncher;
 import org.apache.beam.it.common.PipelineLauncher.JobState;
@@ -56,9 +67,15 @@ import org.apache.beam.it.gcp.dataflow.ClassicTemplateClient;
 import org.apache.beam.it.gcp.dataflow.DirectRunnerClient;
 import org.apache.beam.it.gcp.dataflow.FlexTemplateClient;
 import org.apache.beam.it.gcp.storage.GcsResourceManager;
+import org.apache.beam.sdk.io.FileSystems;
+import org.apache.beam.sdk.io.fs.MatchResult;
+import org.apache.beam.sdk.io.fs.ResourceId;
+import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.cache.Cache;
 import org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.cache.CacheBuilder;
+import org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.cache.RemovalNotification;
 import org.apache.commons.lang3.RandomStringUtils;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -90,11 +107,13 @@ public abstract class TemplateTestBase {
   public TestRule watcher =
       new TestWatcher() {
         protected void starting(Description description) {
-          LOG.info(
-              "Starting integration test {}.{}",
-              description.getClassName(),
-              description.getMethodName());
           testName = description.getMethodName();
+          // In case of parameterization the testName can contain subscript like testName[paramName]
+          // Converting testName from testName[paramName] to testNameParamName since it is used to
+          // create many resources and it cannot contain special characters.
+          testName = testName.replaceAll("\\[", "");
+          testName = testName.replaceAll("\\]", "");
+          LOG.info("Starting integration test {}.{}", description.getClassName(), testName);
         }
       };
 
@@ -112,7 +131,20 @@ public abstract class TemplateTestBase {
   protected String testId;
 
   /** Cache to avoid staging the same template multiple times on the same execution. */
-  private static final Cache<String, String> stagedTemplates = CacheBuilder.newBuilder().build();
+  private static final Cache<String, String> stagedTemplates =
+      CacheBuilder.newBuilder()
+          .removalListener(
+              (RemovalNotification<String, String> removal) -> {
+                final @Nullable String metafileName = removal.getValue();
+                if (metafileName != null) {
+                  cleanUpTemplates(metafileName);
+                }
+              })
+          .build();
+
+  static {
+    Runtime.getRuntime().addShutdownHook(new Thread(stagedTemplates::invalidateAll));
+  }
 
   // Template metadata used only for single template tests specified via @TemplateIntegrationTest.
   protected Template template;
@@ -132,6 +164,7 @@ public abstract class TemplateTestBase {
   protected GcsResourceManager artifactClient;
 
   private boolean usingDirectRunner;
+  private boolean skipRunnerV2;
   protected PipelineLauncher pipelineLauncher;
   protected boolean skipBaseCleanup;
 
@@ -151,6 +184,7 @@ public abstract class TemplateTestBase {
       if (category != null) {
         usingDirectRunner =
             Arrays.asList(category.value()).contains(DirectRunnerTest.class) || usingDirectRunner;
+        skipRunnerV2 = Arrays.asList(category.value()).contains(SkipRunnerV2Test.class);
       }
     } catch (NoSuchMethodException e) {
       // ignore error
@@ -415,6 +449,23 @@ public abstract class TemplateTestBase {
     };
   }
 
+  public GcsResourceManager setUpSpannerITGcsResourceManager() {
+    GcsResourceManager spannerTestsGcsClient;
+    if (TestProperties.project().equals("cloud-teleport-testing")) {
+      List<String> bucketList = TestConstants.SPANNER_TEST_BUCKETS;
+      Random random = new Random();
+      int randomIndex = random.nextInt(bucketList.size());
+      String randomBucketName = bucketList.get(randomIndex);
+      spannerTestsGcsClient =
+          GcsResourceManager.builder(randomBucketName, getClass().getSimpleName(), credentials)
+              .build();
+
+    } else {
+      spannerTestsGcsClient = gcsClient;
+    }
+    return spannerTestsGcsClient;
+  }
+
   private List<String> getModulesBuild(String pomPath) {
     List<String> modules = new ArrayList<>();
     modules.add("metadata");
@@ -488,14 +539,25 @@ public abstract class TemplateTestBase {
             && !templateMetadata.flexContainerName().isEmpty();
 
     // Property allows testing with Runner v2 / Unified Worker
-    if (System.getProperty("unifiedWorker") != null) {
+    String unifiedWorkerHarnessContainerImage =
+        System.getProperty("unifiedWorkerHarnessContainerImage");
+    if (!skipRunnerV2
+        && (System.getProperty("unifiedWorker") != null
+            || unifiedWorkerHarnessContainerImage != null)) {
       appendExperiment(options, "use_runner_v2");
-
       if (System.getProperty("sdkContainerImage") != null) {
         options.addParameter("sdkContainerImage", System.getProperty("sdkContainerImage"));
+      }
+      if (unifiedWorkerHarnessContainerImage != null) {
         appendExperiment(
-            options, "worker_harness_container_image=" + System.getProperty("sdkContainerImage"));
-        appendExperiment(options, "disable_worker_rolling_upgrade");
+            options,
+            "runner_harness_container_image="
+                + System.getProperty("unifiedWorkerHarnessContainerImage"));
+        appendExperiment(options, "use_beam_bq_sink");
+        appendExperiment(options, "beam_fn_api");
+        appendExperiment(options, "use_unified_worker");
+        appendExperiment(options, "use_portable_job_submission");
+        appendExperiment(options, "worker_region=" + REGION);
       }
     }
 
@@ -550,8 +612,18 @@ public abstract class TemplateTestBase {
       Runtime.getRuntime()
           .addShutdownHook(new Thread(new CancelJobShutdownHook(pipelineLauncher, launchInfo)));
     }
+    printJobLink(testName, launchInfo);
 
     return launchInfo;
+  }
+
+  public void printJobLink(String testName, LaunchInfo launchInfo) {
+    LOG.info(
+        "Dataflow Console link for {}: https://console.cloud.google.com/dataflow/jobs/{}/{}?project={}",
+        testName,
+        launchInfo.region(),
+        launchInfo.jobId(),
+        launchInfo.projectId());
   }
 
   /** Get the Cloud Storage base path for this test suite. */
@@ -573,12 +645,15 @@ public abstract class TemplateTestBase {
 
   protected String getGcsPath(String artifactId, GcsResourceManager gcsResourceManager) {
     return ArtifactUtils.getFullGcsPath(
-        artifactBucketName, getClass().getSimpleName(), gcsResourceManager.runId(), artifactId);
+        gcsResourceManager.getBucket(),
+        getClass().getSimpleName(),
+        gcsResourceManager.runId(),
+        artifactId);
   }
 
   /** Create the default configuration {@link PipelineOperator.Config} for a specific job info. */
   protected PipelineOperator.Config createConfig(LaunchInfo info) {
-    return createConfig(info, null);
+    return createConfig(info, Duration.ofMinutes(45));
   }
 
   /** Create the default configuration {@link PipelineOperator.Config} for a specific job info. */
@@ -676,7 +751,7 @@ public abstract class TemplateTestBase {
    * for a specific instance of client and given job information, which is useful to enforcing
    * resource termination using {@link Runtime#addShutdownHook(Thread)}.
    */
-  static class CancelJobShutdownHook implements Runnable {
+  public static class CancelJobShutdownHook implements Runnable {
 
     private final PipelineLauncher pipelineLauncher;
     private final LaunchInfo launchInfo;
@@ -694,13 +769,62 @@ public abstract class TemplateTestBase {
       }
       try {
         Job cancelled =
-            pipelineLauncher.cancelJob(
+            pipelineLauncher.forceCancelJob(
                 launchInfo.projectId(), launchInfo.region(), launchInfo.jobId());
         LOG.warn("Job {} was shutdown by the hook to prevent resources leak.", cancelled.getId());
       } catch (Exception e) {
-        // expected that the cancel fails if the test works as intended, so logging as debug only.
+        // expected that the force cancel fails if the test works as intended, so logging as debug
+        // only.
         LOG.debug("Error shutting down job {}: {}", launchInfo.jobId(), e.getMessage());
       }
+    }
+  }
+
+  private static void cleanUpTemplates(String metafileName) {
+    FileSystems.registerFileSystemsOnce(PipelineOptionsFactory.create());
+    ObjectMapper mapper = new ObjectMapper();
+
+    try {
+      MatchResult result = FileSystems.match(metafileName);
+      if (result.metadata().size() != 1) {
+        return;
+      }
+      ResourceId rid = result.metadata().get(0).resourceId();
+      // for flex template, also clean up staged image
+      if (metafileName.contains("/flex/")) {
+        String raw;
+        try (ReadableByteChannel channel = FileSystems.open(rid)) {
+          Reader reader = Channels.newReader(channel, UTF_8);
+          raw = CharStreams.toString(reader);
+        }
+        JsonNode parsed = mapper.readTree(raw);
+        JsonNode valueNode = parsed.get("image");
+
+        // Check if the key exists and retrieve its text value
+        if (valueNode != null) {
+          String imgName = valueNode.asText();
+          if (!imgName.contains(":")) {
+            imgName = imgName + ":latest";
+          }
+          String[] cmd = null;
+          if (imgName.contains("gcr.io")) {
+            cmd = new String[] {"gcloud", "container", "images", "delete", "-q", imgName};
+          } else if (imgName.contains("pkg.dev")) {
+            cmd = new String[] {"gcloud", "artifacts", "docker", "images", "delete", "-q", imgName};
+          }
+          if (cmd != null) {
+            Process exec = Runtime.getRuntime().exec(cmd);
+            if (exec.waitFor() != 0) {
+              LOG.warn("Error deleting staged image {}", imgName);
+            }
+          }
+        } else {
+          LOG.warn("Error during clean up staged template: unable to find image from metadata");
+        }
+      }
+      FileSystems.delete(ImmutableList.of(rid));
+    } catch (Exception e) {
+      LOG.warn("Error during clean up staged template.", e);
     }
   }
 }

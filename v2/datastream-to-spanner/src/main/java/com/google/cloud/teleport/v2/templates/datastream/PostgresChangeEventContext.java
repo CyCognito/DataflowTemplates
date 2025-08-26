@@ -21,6 +21,7 @@ import com.google.cloud.spanner.Value;
 import com.google.cloud.teleport.v2.spanner.ddl.Ddl;
 import com.google.cloud.teleport.v2.spanner.migrations.convertors.ChangeEventTypeConvertor;
 import com.google.cloud.teleport.v2.spanner.migrations.exceptions.ChangeEventConvertorException;
+import com.google.cloud.teleport.v2.spanner.migrations.exceptions.DroppedTableException;
 import com.google.cloud.teleport.v2.spanner.migrations.exceptions.InvalidChangeEventException;
 
 /**
@@ -29,13 +30,14 @@ import com.google.cloud.teleport.v2.spanner.migrations.exceptions.InvalidChangeE
  */
 class PostgresChangeEventContext extends ChangeEventContext {
 
-  public PostgresChangeEventContext(JsonNode changeEvent, Ddl ddl, String shadowTablePrefix)
-      throws ChangeEventConvertorException, InvalidChangeEventException {
+  public PostgresChangeEventContext(
+      JsonNode changeEvent, Ddl ddl, Ddl shadowTableDdl, String shadowTablePrefix)
+      throws ChangeEventConvertorException, InvalidChangeEventException, DroppedTableException {
     this.changeEvent = changeEvent;
     this.shadowTablePrefix = shadowTablePrefix;
     this.dataTable = changeEvent.get(DatastreamConstants.EVENT_TABLE_NAME_KEY).asText();
     this.shadowTable = shadowTablePrefix + this.dataTable;
-    convertChangeEventToMutation(ddl);
+    convertChangeEventToMutation(ddl, shadowTableDdl);
   }
 
   /*

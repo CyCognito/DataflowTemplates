@@ -11,7 +11,7 @@ how to review/merge code, or other info, see the
 ## Prerequisites
 
 If you are not already familiar with Dataflow, Dataflow Templates (especially
-flex templates), and Apache Beam it is recommended that you familarize yourself
+flex templates), and Apache Beam it is recommended that you familiarize yourself
 with each of these at a high level before contributing. Information on each of
 these can be found in the following locations:
 
@@ -28,7 +28,7 @@ these can be found in the following locations:
 
 ### Requirements
 
-* Java 11
+* Java 17
 * Maven 3
 * IntelliJ (recommended) or another editor of your choice
 
@@ -133,6 +133,13 @@ gcloud auth application-default login
 ```
 
 After authenticated, install the plugin into your local repository:
+
+```shell
+mvn clean install -pl plugins/templates-maven-plugin -am
+```
+
+WARNING: After any changes to the plugin itself, those changes may be cached 
+and prevent any future changes from being observed.  Please reissue:
 
 ```shell
 mvn clean install -pl plugins/templates-maven-plugin -am
@@ -439,3 +446,9 @@ keep [Google-provided Templates](https://cloud.google.com/dataflow/docs/guides/t
 updated with latest fixes and improvements.
 
 To learn more about this process, or how you can stage your own changes, see [Release Process](./release-process.md).
+
+### Release Notes
+
+Release notes are [automatically generated](https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes)
+based on the PR labels defined in [release.yml](https://github.com/GoogleCloudPlatform/DataflowTemplates/blob/main/.github/release.yml).
+Before submitting your PR, a repo maintainer must add one of the following labels in order for all checks to pass: `ignore-for-release`, `new-template`, `improvement`, or `bug-fix`.

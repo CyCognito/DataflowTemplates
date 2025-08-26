@@ -8,10 +8,17 @@ common_params = {
   add_policies_to_service_account = "<TRUE/FALSE>"           # This will decide if roles will be attached to service accounts or not.
 
   datastream_params = {
-    stream_prefix_path            = "<YOUR_STREAM_PREFIX>"           # Prefix for Datastream stream IDs (e.g., "data")
-    max_concurrent_cdc_tasks      = "<YOUR_CDC_TASKS>"               # Maximum concurrent CDC tasks (e.g., 5)
-    max_concurrent_backfill_tasks = "<YOUR_BACKFILL_TASKS>"          # Maximum concurrent backfill tasks (e.g., 15)
-    private_connectivity_id       = "<YOUR_PRIVATE_CONNECTIVITY_ID>" # If using Private Service Connect
+    stream_prefix_path            = "<YOUR_STREAM_PREFIX>"  # Prefix for Datastream stream IDs (e.g., "data")
+    enable_backfill               = true                    # This should always be enabled unless using sourcedb-to-spanner template for bulk migrations.
+    max_concurrent_cdc_tasks      = "<YOUR_CDC_TASKS>"      # Maximum concurrent CDC tasks (e.g., 5)
+    max_concurrent_backfill_tasks = "<YOUR_BACKFILL_TASKS>" # Maximum concurrent backfill tasks (e.g., 15)
+
+    create_firewall_rule      = "<TRUE/FALSE>"               # This will decide if a firewall rule allowing datastream IP ranges will be created or not.
+    firewall_rule_target_tags = "<YOUR_TARGET_NETWORK_TAGS>" # Target network tags on which the firewall rule will be applied.
+    # Specify either firewall_rule_target_tags or firewall_rule_target_ranges to allow targets in the firewall.
+    firewall_rule_target_ranges = "<YOUR_TARGET_IP_RANGES>" # Target IP ranges on which the rule firewall will be applied.
+
+    private_connectivity_id = "<YOUR_PRIVATE_CONNECTIVITY_ID>" # If using Private Service Connect
 
     private_connectivity = {
       private_connectivity_id = "<YOUR_PRIVATE_CONNECTIVITY_ID>" # If using Private Service Connect
@@ -29,6 +36,7 @@ common_params = {
   }
 
   dataflow_params = {
+    skip_dataflow = false
     template_params = {
       shadow_table_prefix                 = "<YOUR_SHADOW_TABLE_PREFIX>"            # Prefix for shadow tables (e.g., "shadow_")
       create_shadow_tables                = "<TRUE/FALSE>"                          # Whether to create shadow tables in Spanner
@@ -50,6 +58,9 @@ common_params = {
       transformation_custom_parameters    = "<YOUR_CUSTOM_PARAMETERS_FOR_JAR>"      # Custom parameters used by the transformation JAR(Optional)
       transformation_class_name           = "<YOUR_TRANSFORMATION_CLASS_NAME>"      # Fully Classified Class Name(Optional)
       filtered_events_directory           = "<YOUR_GCS_PATH_FOR_FILTERED_EVENTS>"   # GCS path to store the filtered events(Optional)
+      table_overrides                     = "<YOUR_TABLE_NAME_OVERRIDES"
+      column_overrides                    = "<YOUR_COLUMN_NAME_OVERRIDES"
+      local_schema_overrides_file_path    = "<YOUR_LOCAL_SCHEMA_OVERRIDES_FILE_PATH>" #One of string based overrides should be used or the file based overrides; not both.
     }
 
     runner_params = {

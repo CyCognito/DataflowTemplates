@@ -11,17 +11,17 @@ check [Provided templates documentation](https://cloud.google.com/dataflow/docs/
 on how to use it without having to build from sources using [Create job from template](https://console.cloud.google.com/dataflow/createjob?template=BigQuery_to_MongoDB).
 
 :bulb: This is a generated documentation based
-on [Metadata Annotations](https://github.com/GoogleCloudPlatform/DataflowTemplates#metadata-annotations)
+on [Metadata Annotations](https://github.com/GoogleCloudPlatform/DataflowTemplates/blob/main/contributor-docs/code-contributions.md#metadata-annotations)
 . Do not change this file directly.
 
 ## Parameters
 
 ### Required parameters
 
-* **mongoDbUri** : The MongoDB connection URI in the format mongodb+srv://:@.
-* **database** : Database in MongoDB to store the collection. (Example: my-db).
-* **collection** : The name of the collection in the MongoDB database. (Example: my-collection).
-* **inputTableSpec** : The BigQuery table to read from. (Example: bigquery-project:dataset.input_table).
+* **mongoDbUri**: The MongoDB connection URI in the format `mongodb+srv://:@`.
+* **database**: Database in MongoDB to store the collection. For example, `my-db`.
+* **collection**: The name of the collection in the MongoDB database. For example, `my-collection`.
+* **inputTableSpec**: The BigQuery table to read from. For example, `bigquery-project:dataset.input_table`.
 
 ### Optional parameters
 
@@ -32,7 +32,7 @@ on [Metadata Annotations](https://github.com/GoogleCloudPlatform/DataflowTemplat
 
 ### Requirements
 
-* Java 11
+* Java 17
 * Maven
 * [gcloud CLI](https://cloud.google.com/sdk/gcloud), and execution of the
   following commands:
@@ -196,9 +196,9 @@ resource "google_dataflow_flex_template_job" "bigquery_to_mongodb" {
   region            = var.region
   parameters        = {
     mongoDbUri = "<mongoDbUri>"
-    database = "my-db"
-    collection = "my-collection"
-    inputTableSpec = "bigquery-project:dataset.input_table"
+    database = "<database>"
+    collection = "<collection>"
+    inputTableSpec = "<inputTableSpec>"
   }
 }
 ```

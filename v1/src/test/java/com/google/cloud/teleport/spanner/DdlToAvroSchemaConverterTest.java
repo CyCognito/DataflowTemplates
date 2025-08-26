@@ -20,24 +20,38 @@ import static com.google.cloud.teleport.spanner.AvroUtil.GENERATION_EXPRESSION;
 import static com.google.cloud.teleport.spanner.AvroUtil.GOOGLE_FORMAT_VERSION;
 import static com.google.cloud.teleport.spanner.AvroUtil.GOOGLE_STORAGE;
 import static com.google.cloud.teleport.spanner.AvroUtil.HIDDEN;
+import static com.google.cloud.teleport.spanner.AvroUtil.IDENTITY_COLUMN;
 import static com.google.cloud.teleport.spanner.AvroUtil.INPUT;
 import static com.google.cloud.teleport.spanner.AvroUtil.NOT_NULL;
 import static com.google.cloud.teleport.spanner.AvroUtil.OUTPUT;
 import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_CHANGE_STREAM_FOR_CLAUSE;
 import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_CHECK_CONSTRAINT;
+import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_EDGE_TABLE;
 import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_ENTITY;
 import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_ENTITY_MODEL;
+import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_ENTITY_PLACEMENT;
+import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_ENTITY_PROPERTY_GRAPH;
 import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_FOREIGN_KEY;
 import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_INDEX;
+import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_INTERLEAVE_TYPE;
+import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_LABEL;
+import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_NODE_TABLE;
 import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_ON_DELETE_ACTION;
 import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_OPTION;
 import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_PARENT;
+import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_PLACEMENT_KEY;
 import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_PRIMARY_KEY;
+import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_PROPERTY_DECLARATION;
 import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_REMOTE;
 import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_SEQUENCE_COUNTER_START;
 import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_SEQUENCE_KIND;
 import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_SEQUENCE_SKIP_RANGE_MAX;
 import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_SEQUENCE_SKIP_RANGE_MIN;
+import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_UDF_DEFINITION;
+import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_UDF_NAME;
+import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_UDF_PARAMETER;
+import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_UDF_SECURITY;
+import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_UDF_TYPE;
 import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_VIEW_QUERY;
 import static com.google.cloud.teleport.spanner.AvroUtil.SPANNER_VIEW_SECURITY;
 import static com.google.cloud.teleport.spanner.AvroUtil.SQL_TYPE;
@@ -47,6 +61,7 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 
 import com.google.cloud.spanner.Dialect;
@@ -54,8 +69,17 @@ import com.google.cloud.teleport.spanner.common.NumericUtils;
 import com.google.cloud.teleport.spanner.common.Type;
 import com.google.cloud.teleport.spanner.common.Type.StructField;
 import com.google.cloud.teleport.spanner.ddl.Ddl;
+import com.google.cloud.teleport.spanner.ddl.GraphElementTable;
+import com.google.cloud.teleport.spanner.ddl.GraphElementTable.GraphNodeTableReference;
+import com.google.cloud.teleport.spanner.ddl.GraphElementTable.LabelToPropertyDefinitions;
+import com.google.cloud.teleport.spanner.ddl.GraphElementTable.PropertyDefinition;
+import com.google.cloud.teleport.spanner.ddl.PropertyGraph;
+import com.google.cloud.teleport.spanner.ddl.Table.InterleaveType;
+import com.google.cloud.teleport.spanner.ddl.Udf.SqlSecurity;
+import com.google.cloud.teleport.spanner.ddl.UdfParameter;
 import com.google.cloud.teleport.spanner.ddl.View;
 import com.google.common.collect.ImmutableList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
@@ -120,6 +144,37 @@ public class DdlToAvroSchemaConverterTest {
             .isHidden(true)
             .generatedAs("(TOKENIZE_FULLTEXT(MyData))")
             .endColumn()
+            .column("Embeddings")
+            .type(Type.array(Type.float32()))
+            .arrayLength(Integer.valueOf(128))
+            .endColumn()
+            .column("HiddenColumn")
+            .type(Type.string())
+            .max()
+            .isHidden(true)
+            .endColumn()
+            .column("identity_column")
+            .type(Type.int64())
+            .isIdentityColumn(true)
+            .sequenceKind("bit_reversed_positive")
+            .counterStartValue(1000L)
+            .skipRangeMin(2000L)
+            .skipRangeMax(3000L)
+            .endColumn()
+            .column("identity_column_no_kind")
+            .type(Type.int64())
+            .isIdentityColumn(true)
+            .counterStartValue(1000L)
+            .skipRangeMin(2000L)
+            .skipRangeMax(3000L)
+            .endColumn()
+            .column("uuid_column")
+            .type(Type.uuid())
+            .endColumn()
+            .column("identity_column_no_params")
+            .type(Type.int64())
+            .isIdentityColumn(true)
+            .endColumn()
             .primaryKey()
             .asc("id")
             .asc("gen_id")
@@ -129,13 +184,21 @@ public class DdlToAvroSchemaConverterTest {
                 ImmutableList.of(
                     "CREATE INDEX `UsersByFirstName` ON `Users` (`first_name`)",
                     "CREATE SEARCH INDEX `SearchIndex` ON `Users` (`MyTokens`)"
-                        + " OPTIONS (sort_order_sharding=TRUE)"))
+                        + " OPTIONS (sort_order_sharding=TRUE)",
+                    "CREATE VECTOR INDEX `VI` ON `Users`(`Embeddings` ) WHERE Embeddings IS NOT NULL"
+                        + " OPTIONS (distance_type=\"COSINE\")"))
             .foreignKeys(
                 ImmutableList.of(
                     "ALTER TABLE `Users` ADD CONSTRAINT `fk` FOREIGN KEY (`first_name`)"
                         + " REFERENCES `AllowedNames` (`first_name`)",
                     "ALTER TABLE `Users` ADD CONSTRAINT `fk_odc` FOREIGN KEY (`last_name`)"
-                        + " REFERENCES `AllowedNames` (`last_name`) ON DELETE CASCADE"))
+                        + " REFERENCES `AllowedNames` (`last_name`) ON DELETE CASCADE",
+                    "ALTER TABLE `Users` ADD CONSTRAINT `fk_not_enforced_no_action`"
+                        + " FOREIGN KEY (`last_name`) REFERENCES "
+                        + "`AllowedNames` (`last_name`) ON DELETE NO ACTION NOT ENFORCED",
+                    "ALTER TABLE `Users` ADD CONSTRAINT `fk_enforced`"
+                        + " FOREIGN KEY (`last_name`) REFERENCES "
+                        + "`AllowedNames` (`last_name`) ENFORCED"))
             .checkConstraints(ImmutableList.of("CONSTRAINT ck CHECK (`first_name` != `last_name`)"))
             .endTable()
             .build();
@@ -152,7 +215,7 @@ public class DdlToAvroSchemaConverterTest {
 
     List<Schema.Field> fields = avroSchema.getFields();
 
-    assertThat(fields, hasSize(6));
+    assertThat(fields, hasSize(12));
 
     assertThat(fields.get(0).name(), equalTo("id"));
     // Not null
@@ -207,6 +270,59 @@ public class DdlToAvroSchemaConverterTest {
         fields.get(5).getProp(GENERATION_EXPRESSION), equalTo("(TOKENIZE_FULLTEXT(MyData))"));
     assertThat(fields.get(5).getProp(DEFAULT_EXPRESSION), equalTo(null));
 
+    assertThat(fields.get(6).name(), equalTo("Embeddings"));
+    assertThat(fields.get(6).schema(), equalTo(nullableArray(Schema.Type.FLOAT)));
+    assertThat(fields.get(6).getProp(SQL_TYPE), equalTo("ARRAY<FLOAT32>(vector_length=>128)"));
+    assertThat(fields.get(6).getProp(NOT_NULL), equalTo(null));
+    assertThat(fields.get(6).getProp(STORED), equalTo(null));
+
+    assertThat(fields.get(7).name(), equalTo("HiddenColumn"));
+    assertThat(fields.get(7).schema(), equalTo(nullableUnion(Schema.Type.STRING)));
+    assertThat(fields.get(7).getProp(SQL_TYPE), equalTo("STRING(MAX)"));
+    assertThat(fields.get(7).getProp(NOT_NULL), equalTo(null));
+    assertThat(fields.get(7).getProp(GENERATION_EXPRESSION), equalTo(null));
+    assertThat(fields.get(7).getProp(STORED), equalTo(null));
+    assertThat(fields.get(7).getProp(HIDDEN), equalTo("true"));
+
+    assertThat(fields.get(8).name(), equalTo("identity_column"));
+    assertThat(fields.get(8).schema(), equalTo(nullableUnion(Schema.Type.LONG)));
+    assertThat(fields.get(8).getProp(SQL_TYPE), equalTo("INT64"));
+    assertThat(fields.get(8).getProp(NOT_NULL), equalTo(null));
+    assertThat(fields.get(8).getProp(IDENTITY_COLUMN), equalTo("true"));
+    assertThat(fields.get(8).getProp(SPANNER_SEQUENCE_KIND), equalTo("bit_reversed_positive"));
+    assertThat(fields.get(8).getProp(SPANNER_SEQUENCE_COUNTER_START), equalTo("1000"));
+    assertThat(fields.get(8).getProp(SPANNER_SEQUENCE_SKIP_RANGE_MIN), equalTo("2000"));
+    assertThat(fields.get(8).getProp(SPANNER_SEQUENCE_SKIP_RANGE_MAX), equalTo("3000"));
+
+    assertThat(fields.get(9).name(), equalTo("identity_column_no_kind"));
+    assertThat(fields.get(9).schema(), equalTo(nullableUnion(Schema.Type.LONG)));
+    assertThat(fields.get(9).getProp(SQL_TYPE), equalTo("INT64"));
+    assertThat(fields.get(9).getProp(NOT_NULL), equalTo(null));
+    assertThat(fields.get(9).getProp(IDENTITY_COLUMN), equalTo("true"));
+    assertThat(fields.get(9).getProp(SPANNER_SEQUENCE_KIND), equalTo(null));
+    assertThat(fields.get(9).getProp(SPANNER_SEQUENCE_COUNTER_START), equalTo("1000"));
+    assertThat(fields.get(9).getProp(SPANNER_SEQUENCE_SKIP_RANGE_MIN), equalTo("2000"));
+    assertThat(fields.get(9).getProp(SPANNER_SEQUENCE_SKIP_RANGE_MAX), equalTo("3000"));
+
+    Schema.Field field10 = fields.get(10);
+    assertThat(field10.name(), equalTo("uuid_column"));
+    assertThat(field10.schema(), equalTo(nullableUuid()));
+    assertThat(field10.getProp(SQL_TYPE), equalTo("UUID"));
+    assertThat(field10.getProp(NOT_NULL), equalTo(null));
+    assertThat(field10.getProp(GENERATION_EXPRESSION), equalTo(null));
+    assertThat(field10.getProp(STORED), equalTo(null));
+    assertThat(field10.getProp(DEFAULT_EXPRESSION), equalTo(null));
+
+    assertThat(fields.get(11).name(), equalTo("identity_column_no_params"));
+    assertThat(fields.get(11).schema(), equalTo(nullableUnion(Schema.Type.LONG)));
+    assertThat(fields.get(11).getProp(SQL_TYPE), equalTo("INT64"));
+    assertThat(fields.get(11).getProp(NOT_NULL), equalTo(null));
+    assertThat(fields.get(11).getProp(IDENTITY_COLUMN), equalTo("true"));
+    assertThat(fields.get(11).getProp(SPANNER_SEQUENCE_KIND), equalTo(null));
+    assertThat(fields.get(11).getProp(SPANNER_SEQUENCE_COUNTER_START), equalTo(null));
+    assertThat(fields.get(11).getProp(SPANNER_SEQUENCE_SKIP_RANGE_MIN), equalTo(null));
+    assertThat(fields.get(11).getProp(SPANNER_SEQUENCE_SKIP_RANGE_MAX), equalTo(null));
+
     // spanner pk
     assertThat(avroSchema.getProp(SPANNER_PRIMARY_KEY + "_0"), equalTo("`id` ASC"));
     assertThat(avroSchema.getProp(SPANNER_PRIMARY_KEY + "_1"), equalTo("`gen_id` ASC"));
@@ -232,6 +348,16 @@ public class DdlToAvroSchemaConverterTest {
         equalTo(
             "ALTER TABLE `Users` ADD CONSTRAINT `fk_odc` FOREIGN KEY (`last_name`)"
                 + " REFERENCES `AllowedNames` (`last_name`) ON DELETE CASCADE"));
+    assertThat(
+        avroSchema.getProp(SPANNER_FOREIGN_KEY + "2"),
+        equalTo(
+            "ALTER TABLE `Users` ADD CONSTRAINT `fk_not_enforced_no_action` FOREIGN KEY (`last_name`)"
+                + " REFERENCES `AllowedNames` (`last_name`) ON DELETE NO ACTION NOT ENFORCED"));
+    assertThat(
+        avroSchema.getProp(SPANNER_FOREIGN_KEY + "3"),
+        equalTo(
+            "ALTER TABLE `Users` ADD CONSTRAINT `fk_enforced` FOREIGN KEY (`last_name`)"
+                + " REFERENCES `AllowedNames` (`last_name`) ENFORCED"));
     assertThat(
         avroSchema.getProp(SPANNER_CHECK_CONSTRAINT + "0"),
         equalTo("CONSTRAINT ck CHECK (`first_name` != `last_name`)"));
@@ -271,13 +397,50 @@ public class DdlToAvroSchemaConverterTest {
             .generatedAs("MOD(id+1, 64)")
             .stored()
             .endColumn()
+            .column("gen_id_virtual")
+            .pgInt8()
+            .notNull()
+            .generatedAs("MOD(id+1, 64)")
+            .endColumn()
+            .column("identity_column")
+            .type(Type.int64())
+            .isIdentityColumn(true)
+            .sequenceKind("bit_reversed_positive")
+            .counterStartValue(1000L)
+            .skipRangeMin(2000L)
+            .skipRangeMax(3000L)
+            .endColumn()
+            .column("identity_column_no_kind")
+            .type(Type.int64())
+            .isIdentityColumn(true)
+            .counterStartValue(1000L)
+            .skipRangeMin(2000L)
+            .skipRangeMax(3000L)
+            .endColumn()
+            .column("tokens")
+            .pgSpannerTokenlist()
+            .generatedAs("(spanner.tokenize_fulltext(full_name))")
+            .isHidden(true)
+            .endColumn()
+            .column("uuid_column")
+            .pgUuid()
+            .endColumn()
+            .column("Embeddings")
+            .type(Type.pgArray(Type.pgFloat4()))
+            .arrayLength(Integer.valueOf(128))
+            .endColumn()
             .primaryKey()
             .asc("id")
             .asc("gen_id")
             .asc("last_name")
             .end()
             .indexes(
-                ImmutableList.of("CREATE INDEX \"UsersByFirstName\" ON \"Users\" (\"first_name\")"))
+                ImmutableList.of(
+                    "CREATE INDEX \"UsersByFirstName\" ON \"Users\" (\"first_name\")",
+                    "CREATE SEARCH INDEX \"SearchIndex\" ON \"Users\" (\"tokens\")"
+                        + " WITH (sort_order_sharding=TRUE)",
+                    "CREATE INDEX \"VI\" ON \"Users\" USING ScaNN (\"Embeddings\")"
+                        + " WITH (distance_type='COSINE') WHERE \"Embeddings\" NOT NULL"))
             .foreignKeys(
                 ImmutableList.of(
                     "ALTER TABLE \"Users\" ADD CONSTRAINT \"fk\" FOREIGN KEY (\"first_name\")"
@@ -301,7 +464,7 @@ public class DdlToAvroSchemaConverterTest {
 
     List<Schema.Field> fields = avroSchema.getFields();
 
-    assertThat(fields, hasSize(5));
+    assertThat(fields, hasSize(11));
 
     assertThat(fields.get(0).name(), equalTo("id"));
     // Not null
@@ -346,6 +509,58 @@ public class DdlToAvroSchemaConverterTest {
     assertThat(fields.get(4).getProp(STORED), equalTo("true"));
     assertThat(fields.get(4).getProp(DEFAULT_EXPRESSION), equalTo(null));
 
+    assertThat(fields.get(5).name(), equalTo("gen_id_virtual"));
+    assertThat(fields.get(5).schema(), equalTo(Schema.create(Schema.Type.NULL)));
+    assertThat(fields.get(5).getProp(SQL_TYPE), equalTo("bigint"));
+    assertThat(fields.get(5).getProp(NOT_NULL), equalTo("true"));
+    assertThat(fields.get(5).getProp(GENERATION_EXPRESSION), equalTo("MOD(id+1, 64)"));
+    assertThat(fields.get(5).getProp(STORED), equalTo("false"));
+    assertThat(fields.get(5).getProp(DEFAULT_EXPRESSION), equalTo(null));
+
+    assertThat(fields.get(6).name(), equalTo("identity_column"));
+    assertThat(fields.get(6).schema(), equalTo(nullableUnion(Schema.Type.LONG)));
+    assertThat(fields.get(6).getProp(SQL_TYPE), equalTo("INT64"));
+    assertThat(fields.get(6).getProp(NOT_NULL), equalTo(null));
+    assertThat(fields.get(6).getProp(IDENTITY_COLUMN), equalTo("true"));
+    assertThat(fields.get(6).getProp(SPANNER_SEQUENCE_KIND), equalTo("bit_reversed_positive"));
+    assertThat(fields.get(6).getProp(SPANNER_SEQUENCE_COUNTER_START), equalTo("1000"));
+    assertThat(fields.get(6).getProp(SPANNER_SEQUENCE_SKIP_RANGE_MIN), equalTo("2000"));
+    assertThat(fields.get(6).getProp(SPANNER_SEQUENCE_SKIP_RANGE_MAX), equalTo("3000"));
+
+    assertThat(fields.get(7).name(), equalTo("identity_column_no_kind"));
+    assertThat(fields.get(7).schema(), equalTo(nullableUnion(Schema.Type.LONG)));
+    assertThat(fields.get(7).getProp(SQL_TYPE), equalTo("INT64"));
+    assertThat(fields.get(7).getProp(NOT_NULL), equalTo(null));
+    assertThat(fields.get(7).getProp(IDENTITY_COLUMN), equalTo("true"));
+    assertThat(fields.get(7).getProp(SPANNER_SEQUENCE_KIND), equalTo(null));
+    assertThat(fields.get(7).getProp(SPANNER_SEQUENCE_COUNTER_START), equalTo("1000"));
+    assertThat(fields.get(7).getProp(SPANNER_SEQUENCE_SKIP_RANGE_MIN), equalTo("2000"));
+    assertThat(fields.get(7).getProp(SPANNER_SEQUENCE_SKIP_RANGE_MAX), equalTo("3000"));
+
+    assertThat(fields.get(8).name(), equalTo("tokens"));
+    assertThat(fields.get(8).schema(), equalTo(Schema.create(Schema.Type.NULL)));
+    assertThat(fields.get(8).getProp(SQL_TYPE), equalTo("spanner.tokenlist"));
+    assertThat(fields.get(8).getProp(NOT_NULL), equalTo("false"));
+    assertThat(
+        fields.get(8).getProp(GENERATION_EXPRESSION),
+        equalTo("(spanner.tokenize_fulltext(full_name))"));
+    assertThat(fields.get(8).getProp(HIDDEN), equalTo("true"));
+    assertThat(fields.get(8).getProp(DEFAULT_EXPRESSION), equalTo(null));
+
+    assertThat(fields.get(9).name(), equalTo("uuid_column"));
+    assertThat(fields.get(9).schema(), equalTo(nullableUuid()));
+    assertThat(fields.get(9).getProp(SQL_TYPE), equalTo("uuid"));
+    assertThat(fields.get(9).getProp(NOT_NULL), equalTo(null));
+    assertThat(fields.get(9).getProp(GENERATION_EXPRESSION), equalTo(null));
+    assertThat(fields.get(9).getProp(STORED), equalTo(null));
+    assertThat(fields.get(9).getProp(DEFAULT_EXPRESSION), equalTo(null));
+
+    assertThat(fields.get(10).name(), equalTo("Embeddings"));
+    assertThat(fields.get(10).schema(), equalTo(nullableArray(Schema.Type.FLOAT)));
+    assertThat(fields.get(10).getProp(SQL_TYPE), equalTo("real[] vector length 128"));
+    assertThat(fields.get(10).getProp(NOT_NULL), equalTo(null));
+    assertThat(fields.get(10).getProp(STORED), equalTo(null));
+
     // spanner pk
     assertThat(avroSchema.getProp(SPANNER_PRIMARY_KEY + "_0"), equalTo("\"id\" ASC"));
     assertThat(avroSchema.getProp(SPANNER_PRIMARY_KEY + "_1"), equalTo("\"gen_id\" ASC"));
@@ -356,6 +571,12 @@ public class DdlToAvroSchemaConverterTest {
     assertThat(
         avroSchema.getProp(SPANNER_INDEX + "0"),
         equalTo("CREATE INDEX \"UsersByFirstName\" ON \"Users\" (\"first_name\")"));
+
+    assertThat(
+        avroSchema.getProp(SPANNER_INDEX + "1"),
+        equalTo(
+            "CREATE SEARCH INDEX \"SearchIndex\" ON \"Users\" (\"tokens\") WITH (sort_order_sharding=TRUE)"));
+
     assertThat(
         avroSchema.getProp(SPANNER_FOREIGN_KEY + "0"),
         equalTo(
@@ -369,6 +590,74 @@ public class DdlToAvroSchemaConverterTest {
     assertThat(
         avroSchema.getProp(SPANNER_CHECK_CONSTRAINT + "0"),
         equalTo("CONSTRAINT ck CHECK (\"first_name\" != \"last_name\")"));
+  }
+
+  @Test
+  public void udfSimple() {
+    DdlToAvroSchemaConverter converter =
+        new DdlToAvroSchemaConverter("spannertest", "booleans", false);
+    Ddl ddl =
+        Ddl.builder()
+            .createUdf("spanner.Foo")
+            .dialect(Dialect.GOOGLE_STANDARD_SQL)
+            .name("Foo")
+            .definition("SELECT 1")
+            .endUdf()
+            .build();
+
+    Collection<Schema> result = converter.convert(ddl);
+    assertThat(result, hasSize(1));
+    Schema avroUdf = result.iterator().next();
+
+    assertThat(avroUdf, notNullValue());
+
+    assertThat(avroUdf.getNamespace(), equalTo("spannertest"));
+    assertThat(avroUdf.getProp(GOOGLE_FORMAT_VERSION), equalTo("booleans"));
+    assertThat(avroUdf.getProp(GOOGLE_STORAGE), equalTo("CloudSpanner"));
+    assertThat(avroUdf.getProp(SPANNER_UDF_NAME), equalTo("Foo"));
+    assertThat(avroUdf.getProp(SPANNER_UDF_DEFINITION), equalTo("SELECT 1"));
+
+    assertThat(avroUdf.getName(), equalTo("spanner_Foo"));
+  }
+
+  @Test
+  public void udfAllOptions() {
+    DdlToAvroSchemaConverter converter =
+        new DdlToAvroSchemaConverter("spannertest", "booleans", false);
+    Ddl ddl =
+        Ddl.builder()
+            .createUdf("spanner.Foo")
+            .dialect(Dialect.GOOGLE_STANDARD_SQL)
+            .name("Foo")
+            .definition("SELECT 1")
+            .security(SqlSecurity.INVOKER)
+            .type("STRING")
+            .addParameter(
+                UdfParameter.parse("arg0 STRING", "spanner.Foo", Dialect.GOOGLE_STANDARD_SQL))
+            .addParameter(
+                UdfParameter.parse(
+                    "arg1 STRING DEFAULT \"bar\"", "spanner.Foo", Dialect.GOOGLE_STANDARD_SQL))
+            .endUdf()
+            .build();
+
+    Collection<Schema> result = converter.convert(ddl);
+    assertThat(result, hasSize(1));
+    Schema avroUdf = result.iterator().next();
+
+    assertThat(avroUdf, notNullValue());
+
+    assertThat(avroUdf.getNamespace(), equalTo("spannertest"));
+    assertThat(avroUdf.getProp(GOOGLE_FORMAT_VERSION), equalTo("booleans"));
+    assertThat(avroUdf.getProp(GOOGLE_STORAGE), equalTo("CloudSpanner"));
+    assertThat(avroUdf.getProp(SPANNER_UDF_NAME), equalTo("Foo"));
+    assertThat(avroUdf.getProp(SPANNER_UDF_DEFINITION), equalTo("SELECT 1"));
+    assertThat(avroUdf.getProp(SPANNER_UDF_SECURITY), equalTo("INVOKER"));
+    assertThat(avroUdf.getProp(SPANNER_UDF_TYPE), equalTo("STRING"));
+    assertThat(avroUdf.getProp(SPANNER_UDF_PARAMETER + 0), equalTo("`arg0` STRING"));
+    assertThat(
+        avroUdf.getProp(SPANNER_UDF_PARAMETER + 1), equalTo("`arg1` STRING DEFAULT \"bar\""));
+
+    assertThat(avroUdf.getName(), equalTo("spanner_Foo"));
   }
 
   @Test
@@ -632,6 +921,12 @@ public class DdlToAvroSchemaConverterTest {
             .column("arr_enum_field")
             .type(Type.array(Type.protoEnum("com.google.cloud.teleport.spanner.tests.TestEnum")))
             .endColumn()
+            .column("uuid_col")
+            .type(Type.uuid())
+            .endColumn()
+            .column("uuid_array_col")
+            .type(Type.array(Type.uuid()))
+            .endColumn()
             .primaryKey()
             .asc("bool_field")
             .end()
@@ -650,7 +945,7 @@ public class DdlToAvroSchemaConverterTest {
 
     List<Schema.Field> fields = avroSchema.getFields();
 
-    assertThat(fields, hasSize(22));
+    assertThat(fields, hasSize(24));
 
     assertThat(fields.get(0).name(), equalTo("bool_field"));
     assertThat(fields.get(0).schema(), equalTo(nullableUnion(Schema.Type.BOOLEAN)));
@@ -748,9 +1043,20 @@ public class DdlToAvroSchemaConverterTest {
         fields.get(21).getProp(SQL_TYPE),
         equalTo("ARRAY<ENUM<com.google.cloud.teleport.spanner.tests.TestEnum>>"));
 
+    Schema.Field field22 = fields.get(22);
+    assertThat(field22.name(), equalTo("uuid_col"));
+    assertThat(field22.schema(), equalTo(nullableUuid()));
+    assertThat(field22.getProp(SQL_TYPE), equalTo("UUID"));
+
+    Schema.Field field23 = fields.get(23);
+    assertThat(field23.name(), equalTo("uuid_array_col"));
+    assertThat(field23.schema(), equalTo(nullableUuidArray()));
+    assertThat(field23.getProp(SQL_TYPE), equalTo("ARRAY<UUID>"));
+
     assertThat(avroSchema.getProp(SPANNER_PRIMARY_KEY + "_0"), equalTo("`bool_field` ASC"));
     assertThat(avroSchema.getProp(SPANNER_PARENT), equalTo("ParentTable"));
     assertThat(avroSchema.getProp(SPANNER_ON_DELETE_ACTION), equalTo("cascade"));
+    assertThat(avroSchema.getProp(SPANNER_INTERLEAVE_TYPE), equalTo("IN PARENT"));
 
     System.out.println(avroSchema.toString(true));
   }
@@ -821,6 +1127,12 @@ public class DdlToAvroSchemaConverterTest {
             .column("arr_date_field")
             .type(Type.pgArray(Type.pgDate()))
             .endColumn()
+            .column("uuid_col")
+            .type(Type.pgUuid())
+            .endColumn()
+            .column("uuid_array_col")
+            .type(Type.pgArray(Type.pgUuid()))
+            .endColumn()
             .primaryKey()
             .asc("bool_field")
             .end()
@@ -839,7 +1151,7 @@ public class DdlToAvroSchemaConverterTest {
 
     List<Schema.Field> fields = avroSchema.getFields();
 
-    assertThat(fields, hasSize(19));
+    assertThat(fields, hasSize(21));
 
     assertThat(fields.get(0).name(), equalTo("bool_field"));
     assertThat(fields.get(0).schema(), equalTo(nullableUnion(Schema.Type.BOOLEAN)));
@@ -917,9 +1229,20 @@ public class DdlToAvroSchemaConverterTest {
     assertThat(fields.get(18).schema(), equalTo(nullableArray(Schema.Type.STRING)));
     assertThat(fields.get(18).getProp(SQL_TYPE), equalTo("date[]"));
 
+    Schema.Field field19 = fields.get(19);
+    assertThat(field19.name(), equalTo("uuid_col"));
+    assertThat(field19.schema(), equalTo(nullableUuid()));
+    assertThat(field19.getProp(SQL_TYPE), equalTo("uuid"));
+
+    Schema.Field field20 = fields.get(20);
+    assertThat(field20.name(), equalTo("uuid_array_col"));
+    assertThat(field20.schema(), equalTo(nullableUuidArray()));
+    assertThat(field20.getProp(SQL_TYPE), equalTo("uuid[]"));
+
     assertThat(avroSchema.getProp(SPANNER_PRIMARY_KEY + "_0"), equalTo("\"bool_field\" ASC"));
     assertThat(avroSchema.getProp(SPANNER_PARENT), equalTo("ParentTable"));
     assertThat(avroSchema.getProp(SPANNER_ON_DELETE_ACTION), equalTo("cascade"));
+    assertThat(avroSchema.getProp(SPANNER_INTERLEAVE_TYPE), equalTo("IN PARENT"));
   }
 
   @Test
@@ -1014,6 +1337,153 @@ public class DdlToAvroSchemaConverterTest {
     assertThat(fields.get(1).name(), equalTo("timestamp_field"));
     assertThat(fields.get(1).schema(), equalTo(nullableTimestampUnion()));
     assertThat(fields.get(1).getProp(SQL_TYPE), equalTo("timestamp with time zone"));
+  }
+
+  @Test
+  public void propertyGraphs() {
+    DdlToAvroSchemaConverter converter =
+        new DdlToAvroSchemaConverter("spannertest", "booleans", true);
+
+    // Craft Property Declarations
+    PropertyGraph.PropertyDeclaration propertyDeclaration1 =
+        new PropertyGraph.PropertyDeclaration("dummyPropName", "dummyPropType");
+    PropertyGraph.PropertyDeclaration propertyDeclaration2 =
+        new PropertyGraph.PropertyDeclaration("aliasedPropName", "aliasedPropType");
+    ImmutableList<String> propertyDeclsLabel1 =
+        ImmutableList.copyOf(Arrays.asList(propertyDeclaration1.name, propertyDeclaration2.name));
+
+    // Craft Labels and associated property definitions
+    PropertyGraph.GraphElementLabel label1 =
+        new PropertyGraph.GraphElementLabel("dummyLabelName1", propertyDeclsLabel1);
+    GraphElementTable.PropertyDefinition propertyDefinition1 =
+        new PropertyDefinition("dummyPropName", "dummyPropName");
+    GraphElementTable.PropertyDefinition propertyDefinition2 =
+        new PropertyDefinition(
+            "aliasedPropName", "CONCAT(CAST(test_col AS STRING), \":\", \"dummyColumn\")");
+    GraphElementTable.LabelToPropertyDefinitions labelToPropertyDefinitions1 =
+        new LabelToPropertyDefinitions(
+            label1.name, ImmutableList.of(propertyDefinition1, propertyDefinition2));
+
+    PropertyGraph.GraphElementLabel label2 =
+        new PropertyGraph.GraphElementLabel("dummyLabelName2", ImmutableList.of());
+    GraphElementTable.LabelToPropertyDefinitions labelToPropertyDefinitions2 =
+        new LabelToPropertyDefinitions(label2.name, ImmutableList.of());
+
+    PropertyGraph.GraphElementLabel label3 =
+        new PropertyGraph.GraphElementLabel("dummyLabelName3", ImmutableList.of());
+    GraphElementTable.LabelToPropertyDefinitions labelToPropertyDefinitions3 =
+        new LabelToPropertyDefinitions(label3.name, ImmutableList.of());
+
+    // Craft Node table
+    GraphElementTable.Builder testNodeTable =
+        GraphElementTable.builder()
+            .baseTableName("baseTable")
+            .name("nodeAlias")
+            .kind(GraphElementTable.Kind.NODE)
+            .keyColumns(ImmutableList.of("primaryKey"))
+            .labelToPropertyDefinitions(
+                ImmutableList.of(labelToPropertyDefinitions1, labelToPropertyDefinitions2));
+
+    // Craft Edge table
+    GraphElementTable.Builder testEdgeTable =
+        GraphElementTable.builder()
+            .baseTableName("edgeBaseTable")
+            .name("edgeAlias")
+            .kind(GraphElementTable.Kind.EDGE)
+            .keyColumns(ImmutableList.of("edgePrimaryKey"))
+            .sourceNodeTable(
+                new GraphNodeTableReference(
+                    "baseTable", ImmutableList.of("nodeKey"), ImmutableList.of("sourceEdgeKey")))
+            .targetNodeTable(
+                new GraphNodeTableReference(
+                    "baseTable", ImmutableList.of("otherNodeKey"), ImmutableList.of("destEdgeKey")))
+            .labelToPropertyDefinitions(ImmutableList.of(labelToPropertyDefinitions3));
+
+    Ddl ddl =
+        Ddl.builder()
+            .createPropertyGraph("testGraph")
+            .addLabel(label1)
+            .addLabel(label2)
+            .addLabel(label3)
+            .addPropertyDeclaration(propertyDeclaration1)
+            .addPropertyDeclaration(propertyDeclaration2)
+            .addNodeTable(testNodeTable.autoBuild())
+            .addEdgeTable(testEdgeTable.autoBuild())
+            .endPropertyGraph()
+            .build();
+
+    Collection<Schema> result = converter.convert(ddl);
+    assertThat(result, hasSize(1));
+    Schema avroSchema = result.iterator().next();
+
+    assertThat(avroSchema.getName(), equalTo("testGraph"));
+    assertThat(avroSchema.getNamespace(), equalTo("spannertest"));
+    assertThat(avroSchema.getProp(GOOGLE_FORMAT_VERSION), equalTo("booleans"));
+    assertThat(avroSchema.getProp(GOOGLE_STORAGE), equalTo("CloudSpanner"));
+    assertThat(avroSchema.getProp(SPANNER_ENTITY), equalTo(SPANNER_ENTITY_PROPERTY_GRAPH));
+
+    // Basic assertions
+    assertEquals("testGraph", avroSchema.getName());
+    assertEquals("spannertest", avroSchema.getNamespace());
+    assertEquals(Schema.Type.RECORD, avroSchema.getType());
+
+    // Asserting properties related to Spanner
+    assertEquals("CloudSpanner", avroSchema.getProp(GOOGLE_STORAGE));
+    assertEquals("testGraph", avroSchema.getProp("spannerName"));
+    assertEquals("booleans", avroSchema.getProp(GOOGLE_FORMAT_VERSION));
+
+    // Asserting properties related to Node table
+    assertEquals("nodeAlias", avroSchema.getProp(SPANNER_NODE_TABLE + "_0_NAME"));
+    assertEquals("baseTable", avroSchema.getProp(SPANNER_NODE_TABLE + "_0_BASE_TABLE_NAME"));
+    assertEquals("NODE", avroSchema.getProp(SPANNER_NODE_TABLE + "_0_KIND"));
+    assertEquals("primaryKey", avroSchema.getProp(SPANNER_NODE_TABLE + "_0_KEY_COLUMNS"));
+
+    // Asserting properties related to Node labels
+    assertEquals("dummyLabelName1", avroSchema.getProp(SPANNER_NODE_TABLE + "_0_LABEL_0_NAME"));
+    assertEquals("dummyLabelName2", avroSchema.getProp(SPANNER_NODE_TABLE + "_0_LABEL_1_NAME"));
+
+    // Asserting properties related to Node label properties
+    assertEquals(
+        "dummyPropName", avroSchema.getProp(SPANNER_NODE_TABLE + "_0_LABEL_0_PROPERTY_0_NAME"));
+    assertEquals(
+        "dummyPropName", avroSchema.getProp(SPANNER_NODE_TABLE + "_0_LABEL_0_PROPERTY_0_VALUE"));
+    assertEquals(
+        "aliasedPropName", avroSchema.getProp(SPANNER_NODE_TABLE + "_0_LABEL_0_PROPERTY_1_NAME"));
+    assertEquals(
+        "CONCAT(CAST(test_col AS STRING), \":\", \"dummyColumn\")",
+        avroSchema.getProp(SPANNER_NODE_TABLE + "_0_LABEL_0_PROPERTY_1_VALUE"));
+
+    // Asserting properties related to Edge table
+    assertEquals("edgeAlias", avroSchema.getProp(SPANNER_EDGE_TABLE + "_0_NAME"));
+    assertEquals("edgeBaseTable", avroSchema.getProp(SPANNER_EDGE_TABLE + "_0_BASE_TABLE_NAME"));
+    assertEquals("EDGE", avroSchema.getProp(SPANNER_EDGE_TABLE + "_0_KIND"));
+    assertEquals("edgePrimaryKey", avroSchema.getProp(SPANNER_EDGE_TABLE + "_0_KEY_COLUMNS"));
+    assertEquals("baseTable", avroSchema.getProp(SPANNER_EDGE_TABLE + "_0_SOURCE_NODE_TABLE_NAME"));
+    assertEquals("nodeKey", avroSchema.getProp(SPANNER_EDGE_TABLE + "_0_SOURCE_NODE_KEY_COLUMNS"));
+    assertEquals(
+        "sourceEdgeKey", avroSchema.getProp(SPANNER_EDGE_TABLE + "_0_SOURCE_EDGE_KEY_COLUMNS"));
+    assertEquals("baseTable", avroSchema.getProp(SPANNER_EDGE_TABLE + "_0_TARGET_NODE_TABLE_NAME"));
+    assertEquals(
+        "otherNodeKey", avroSchema.getProp(SPANNER_EDGE_TABLE + "_0_TARGET_NODE_KEY_COLUMNS"));
+    assertEquals(
+        "destEdgeKey", avroSchema.getProp(SPANNER_EDGE_TABLE + "_0_TARGET_EDGE_KEY_COLUMNS"));
+
+    // Asserting properties related to Edge labels
+    assertEquals("dummyLabelName3", avroSchema.getProp(SPANNER_EDGE_TABLE + "_0_LABEL_0_NAME"));
+
+    // Asserting labels and properties linked to them
+    assertEquals("dummyLabelName1", avroSchema.getProp(SPANNER_LABEL + "_0_NAME"));
+    assertEquals("dummyPropName", avroSchema.getProp(SPANNER_LABEL + "_0_PROPERTY_0"));
+    assertEquals("aliasedPropName", avroSchema.getProp(SPANNER_LABEL + "_0_PROPERTY_1"));
+
+    assertEquals("dummyLabelName2", avroSchema.getProp(SPANNER_LABEL + "_1_NAME"));
+    assertEquals("dummyLabelName3", avroSchema.getProp(SPANNER_LABEL + "_2_NAME"));
+
+    // Asserting properties related to graph property declarations
+    assertEquals("dummyPropName", avroSchema.getProp(SPANNER_PROPERTY_DECLARATION + "_0_NAME"));
+    assertEquals("dummyPropType", avroSchema.getProp(SPANNER_PROPERTY_DECLARATION + "_0_TYPE"));
+    assertEquals("aliasedPropName", avroSchema.getProp(SPANNER_PROPERTY_DECLARATION + "_1_NAME"));
+    assertEquals("aliasedPropType", avroSchema.getProp(SPANNER_PROPERTY_DECLARATION + "_1_TYPE"));
   }
 
   @Test
@@ -1355,10 +1825,13 @@ public class DdlToAvroSchemaConverterTest {
             .createSequence("Sequence3")
             .options(ImmutableList.of("sequence_kind=\"bit_reversed_positive\""))
             .endSequence()
+            .createSequence("Sequence4")
+            .options(ImmutableList.of("sequence_kind=\"default\""))
+            .endSequence()
             .build();
 
     Collection<Schema> result = converter.convert(ddl);
-    assertThat(result, hasSize(3));
+    assertThat(result, hasSize(4));
     for (Schema s : result) {
       assertThat(s.getNamespace(), equalTo("spannertest"));
       assertThat(s.getProp("googleFormatVersion"), equalTo("booleans"));
@@ -1388,6 +1861,10 @@ public class DdlToAvroSchemaConverterTest {
     assertThat(
         avroSchema3.getProp("sequenceOption_0"),
         equalTo("sequence_kind=\"bit_reversed_positive\""));
+
+    Schema avroSchema4 = it.next();
+    assertThat(avroSchema4.getName(), equalTo("Sequence4"));
+    assertThat(avroSchema4.getProp("sequenceOption_0"), equalTo("sequence_kind=\"default\""));
   }
 
   @Test
@@ -1409,10 +1886,13 @@ public class DdlToAvroSchemaConverterTest {
             .createSequence("PGSequence3")
             .sequenceKind("bit_reversed_positive")
             .endSequence()
+            .createSequence("PGSequence4")
+            .sequenceKind("default")
+            .endSequence()
             .build();
 
     Collection<Schema> result = converter.convert(ddl);
-    assertThat(result, hasSize(3));
+    assertThat(result, hasSize(4));
     for (Schema s : result) {
       assertThat(s.getNamespace(), equalTo("spannertest"));
       assertThat(s.getProp("googleFormatVersion"), equalTo("booleans"));
@@ -1436,10 +1916,265 @@ public class DdlToAvroSchemaConverterTest {
     Schema avroSchema3 = it.next();
     assertThat(avroSchema3.getName(), equalTo("PGSequence3"));
     assertThat(avroSchema3.getProp(SPANNER_SEQUENCE_KIND), equalTo("bit_reversed_positive"));
+
+    Schema avroSchema4 = it.next();
+    assertThat(avroSchema4.getName(), equalTo("PGSequence4"));
+    assertThat(avroSchema4.getProp(SPANNER_SEQUENCE_KIND), equalTo("default"));
+  }
+
+  @Test
+  public void placements() {
+    DdlToAvroSchemaConverter converter =
+        new DdlToAvroSchemaConverter("spannertest", "booleans", false);
+    String placementName1 = "pl1";
+    String placementName2 = "pl2";
+    String instancePartition = "mr-partition";
+    String defaultLeader = "us-central1";
+    Ddl ddl =
+        Ddl.builder()
+            .createPlacement(placementName1)
+            .options(ImmutableList.of("instance_partition=\"" + instancePartition + "\""))
+            .endPlacement()
+            .createPlacement(placementName2)
+            .options(
+                ImmutableList.of(
+                    "instance_partition=\"" + instancePartition + "\"",
+                    "default_leader=\"" + defaultLeader + "\""))
+            .endPlacement()
+            .build();
+
+    Collection<Schema> result = converter.convert(ddl);
+    assertThat(result, hasSize(2));
+
+    Iterator<Schema> it = result.iterator();
+    Schema avroSchema1 = it.next();
+    assertThat(avroSchema1.getNamespace(), equalTo("spannertest"));
+    assertThat(avroSchema1.getProp(GOOGLE_FORMAT_VERSION), equalTo("booleans"));
+    assertThat(avroSchema1.getProp(GOOGLE_STORAGE), equalTo("CloudSpanner"));
+    assertThat(avroSchema1.getProp(SPANNER_ENTITY), equalTo(SPANNER_ENTITY_PLACEMENT));
+    assertThat(avroSchema1.getFields(), empty());
+    assertThat(avroSchema1.getName(), equalTo(placementName1));
+    assertThat(
+        avroSchema1.getProp(SPANNER_OPTION + "0"),
+        equalTo("instance_partition=\"" + instancePartition + "\""));
+
+    Schema avroSchema2 = it.next();
+    assertThat(avroSchema2.getNamespace(), equalTo("spannertest"));
+    assertThat(avroSchema2.getProp(GOOGLE_FORMAT_VERSION), equalTo("booleans"));
+    assertThat(avroSchema2.getProp(GOOGLE_STORAGE), equalTo("CloudSpanner"));
+    assertThat(avroSchema2.getProp(SPANNER_ENTITY), equalTo(SPANNER_ENTITY_PLACEMENT));
+    assertThat(avroSchema2.getFields(), empty());
+    assertThat(avroSchema2.getName(), equalTo(placementName2));
+    assertThat(
+        avroSchema2.getProp(SPANNER_OPTION + "0"),
+        equalTo("instance_partition=\"" + instancePartition + "\""));
+    assertThat(
+        avroSchema2.getProp(SPANNER_OPTION + "1"),
+        equalTo("default_leader=\"" + defaultLeader + "\""));
+  }
+
+  @Test
+  public void placementTable() {
+    DdlToAvroSchemaConverter converter =
+        new DdlToAvroSchemaConverter("spannertest", "booleans", false);
+    Ddl ddl =
+        Ddl.builder()
+            .createTable("PlacementKeyWithPrimaryKey")
+            .column("location")
+            .type(Type.string())
+            .max()
+            .notNull()
+            .placementKey()
+            .endColumn()
+            .column("val")
+            .type(Type.string())
+            .size(10)
+            .endColumn()
+            .endTable()
+            .build();
+
+    Collection<Schema> result = converter.convert(ddl);
+    assertThat(result, hasSize(1));
+    Schema avroSchema = result.iterator().next();
+
+    assertThat(avroSchema.getNamespace(), equalTo("spannertest"));
+    assertThat(avroSchema.getProp(GOOGLE_FORMAT_VERSION), equalTo("booleans"));
+    assertThat(avroSchema.getProp(GOOGLE_STORAGE), equalTo("CloudSpanner"));
+
+    assertThat(avroSchema.getName(), equalTo("PlacementKeyWithPrimaryKey"));
+
+    List<Schema.Field> fields = avroSchema.getFields();
+
+    assertThat(fields, hasSize(2));
+
+    // Placement key column
+    assertThat(fields.get(0).name(), equalTo("location"));
+    assertThat(fields.get(0).schema().getType(), equalTo(Schema.Type.STRING));
+    assertThat(fields.get(0).getProp(SQL_TYPE), equalTo("STRING(MAX)"));
+    assertThat(fields.get(0).getProp(SPANNER_PLACEMENT_KEY), equalTo("true"));
+    assertThat(fields.get(0).getProp(STORED), equalTo(null));
+
+    assertThat(fields.get(1).name(), equalTo("val"));
+    assertThat(fields.get(1).schema(), equalTo(nullableUnion(Schema.Type.STRING)));
+    assertThat(fields.get(1).getProp(SQL_TYPE), equalTo("STRING(10)"));
+    assertThat(fields.get(1).getProp(SPANNER_PLACEMENT_KEY), equalTo(null));
+  }
+
+  @Test
+  public void pgPlacementTable() {
+    DdlToAvroSchemaConverter converter =
+        new DdlToAvroSchemaConverter("spannertest", "booleans", false);
+    Ddl ddl =
+        Ddl.builder(Dialect.POSTGRESQL)
+            .createTable("PlacementKeyWithPrimaryKey")
+            .column("location")
+            .pgVarchar()
+            .max()
+            .notNull()
+            .placementKey()
+            .endColumn()
+            .column("val")
+            .pgVarchar()
+            .size(10)
+            .endColumn()
+            .endTable()
+            .build();
+
+    Collection<Schema> result = converter.convert(ddl);
+    assertThat(result, hasSize(1));
+    Schema avroSchema = result.iterator().next();
+
+    assertThat(avroSchema.getNamespace(), equalTo("spannertest"));
+    assertThat(avroSchema.getProp(GOOGLE_FORMAT_VERSION), equalTo("booleans"));
+    assertThat(avroSchema.getProp(GOOGLE_STORAGE), equalTo("CloudSpanner"));
+
+    assertThat(avroSchema.getName(), equalTo("PlacementKeyWithPrimaryKey"));
+
+    List<Schema.Field> fields = avroSchema.getFields();
+
+    assertThat(fields, hasSize(2));
+
+    // Placement key column
+    assertThat(fields.get(0).name(), equalTo("location"));
+    assertThat(fields.get(0).schema().getType(), equalTo(Schema.Type.STRING));
+    assertThat(fields.get(0).getProp(SQL_TYPE), equalTo("character varying"));
+    assertThat(fields.get(0).getProp(SPANNER_PLACEMENT_KEY), equalTo("true"));
+    assertThat(fields.get(0).getProp(STORED), equalTo(null));
+
+    assertThat(fields.get(1).name(), equalTo("val"));
+    assertThat(fields.get(1).schema(), equalTo(nullableUnion(Schema.Type.STRING)));
+    assertThat(fields.get(1).getProp(SQL_TYPE), equalTo("character varying(10)"));
+    assertThat(fields.get(1).getProp(SPANNER_PLACEMENT_KEY), equalTo(null));
+  }
+
+  @Test
+  public void interleaveInTable() {
+    DdlToAvroSchemaConverter converter =
+        new DdlToAvroSchemaConverter("spannertest", "booleans", false);
+    Ddl ddl =
+        Ddl.builder()
+            .createTable("InterleaveInTable")
+            .column("k1")
+            .type(Type.string())
+            .max()
+            .notNull()
+            .endColumn()
+            .column("v1")
+            .type(Type.string())
+            .size(10)
+            .endColumn()
+            .interleaveInParent("ParentTable")
+            .interleaveType(InterleaveType.IN)
+            .endTable()
+            .build();
+
+    Collection<Schema> result = converter.convert(ddl);
+    assertThat(result, hasSize(1));
+    Schema avroSchema = result.iterator().next();
+
+    assertThat(avroSchema.getNamespace(), equalTo("spannertest"));
+    assertThat(avroSchema.getProp(GOOGLE_FORMAT_VERSION), equalTo("booleans"));
+    assertThat(avroSchema.getProp(GOOGLE_STORAGE), equalTo("CloudSpanner"));
+
+    assertThat(avroSchema.getName(), equalTo("InterleaveInTable"));
+
+    List<Schema.Field> fields = avroSchema.getFields();
+
+    assertThat(fields, hasSize(2));
+
+    // k1
+    assertThat(fields.get(0).name(), equalTo("k1"));
+    assertThat(fields.get(0).schema().getType(), equalTo(Schema.Type.STRING));
+    assertThat(fields.get(0).getProp(SQL_TYPE), equalTo("STRING(MAX)"));
+
+    // v1
+    assertThat(fields.get(1).name(), equalTo("v1"));
+    assertThat(fields.get(1).schema(), equalTo(nullableUnion(Schema.Type.STRING)));
+    assertThat(fields.get(1).getProp(SQL_TYPE), equalTo("STRING(10)"));
+
+    assertThat(avroSchema.getProp(SPANNER_PARENT), equalTo("ParentTable"));
+    assertThat(avroSchema.getProp(SPANNER_ON_DELETE_ACTION), equalTo("no action"));
+    assertThat(avroSchema.getProp(SPANNER_INTERLEAVE_TYPE), equalTo("IN"));
+  }
+
+  @Test
+  public void pgInterleaveInTable() {
+    DdlToAvroSchemaConverter converter =
+        new DdlToAvroSchemaConverter("spannertest", "booleans", false);
+    Ddl ddl =
+        Ddl.builder(Dialect.POSTGRESQL)
+            .createTable("InterleaveInTable")
+            .column("k1")
+            .type(Type.string())
+            .max()
+            .notNull()
+            .endColumn()
+            .column("v1")
+            .type(Type.string())
+            .size(10)
+            .endColumn()
+            .interleaveInParent("ParentTable")
+            .interleaveType(InterleaveType.IN)
+            .endTable()
+            .build();
+
+    Collection<Schema> result = converter.convert(ddl);
+    assertThat(result, hasSize(1));
+    Schema avroSchema = result.iterator().next();
+
+    assertThat(avroSchema.getNamespace(), equalTo("spannertest"));
+    assertThat(avroSchema.getProp(GOOGLE_FORMAT_VERSION), equalTo("booleans"));
+    assertThat(avroSchema.getProp(GOOGLE_STORAGE), equalTo("CloudSpanner"));
+
+    assertThat(avroSchema.getName(), equalTo("InterleaveInTable"));
+
+    List<Schema.Field> fields = avroSchema.getFields();
+
+    assertThat(fields, hasSize(2));
+
+    // k1
+    assertThat(fields.get(0).name(), equalTo("k1"));
+    assertThat(fields.get(0).schema().getType(), equalTo(Schema.Type.STRING));
+    assertThat(fields.get(0).getProp(SQL_TYPE), equalTo("STRING(MAX)"));
+
+    // v1
+    assertThat(fields.get(1).name(), equalTo("v1"));
+    assertThat(fields.get(1).schema(), equalTo(nullableUnion(Schema.Type.STRING)));
+    assertThat(fields.get(1).getProp(SQL_TYPE), equalTo("STRING(10)"));
+
+    assertThat(avroSchema.getProp(SPANNER_PARENT), equalTo("ParentTable"));
+    assertThat(avroSchema.getProp(SPANNER_ON_DELETE_ACTION), equalTo("no action"));
+    assertThat(avroSchema.getProp(SPANNER_INTERLEAVE_TYPE), equalTo("IN"));
   }
 
   private Schema nullableUnion(Schema.Type s) {
     return Schema.createUnion(Schema.create(Schema.Type.NULL), Schema.create(s));
+  }
+
+  private Schema nullableUuid() {
+    return Schema.createUnion(
+        Schema.create(Schema.Type.NULL),
+        LogicalTypes.uuid().addToSchema(Schema.create(Schema.Type.STRING)));
   }
 
   private Schema nullableNumericUnion() {
@@ -1459,6 +2194,15 @@ public class DdlToAvroSchemaConverterTest {
     return Schema.createUnion(
         Schema.create(Schema.Type.NULL),
         Schema.createArray(Schema.createUnion(Schema.create(Schema.Type.NULL), Schema.create(s))));
+  }
+
+  private Schema nullableUuidArray() {
+    return Schema.createUnion(
+        Schema.create(Schema.Type.NULL),
+        Schema.createArray(
+            Schema.createUnion(
+                Schema.create(Schema.Type.NULL),
+                LogicalTypes.uuid().addToSchema(Schema.create(Schema.Type.STRING)))));
   }
 
   private Schema nullableNumericArray() {

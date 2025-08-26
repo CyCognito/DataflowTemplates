@@ -15,6 +15,10 @@
  */
 package com.google.cloud.teleport.v2.datastream.transforms;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.cloud.teleport.v2.coders.FailsafeElementCoder;
 import com.google.cloud.teleport.v2.values.FailsafeElement;
 import com.google.common.collect.ImmutableMap;
@@ -23,6 +27,7 @@ import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.transforms.Create;
+import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.values.PCollection;
 import org.junit.Rule;
@@ -43,12 +48,12 @@ public class FormatDatastreamJsonToJsonTest {
           + " Relations Representative\",\"MIN_SALARY\":4500,\"MAX_SALARY\":10500}}";
 
   private static final String EXAMPLE_DATASTREAM_RECORD =
-      "{\"_metadata_stream\":\"my-stream\",\"_metadata_timestamp\":1640410924,\"_metadata_read_timestamp\":1640410924,\"_metadata_read_method\":\"oracle-backfill\",\"_metadata_source_type\":\"oracle\",\"_metadata_deleted\":false,\"_metadata_table\":\"JOBS\",\"_metadata_change_type\":\"INSERT\",\"_metadata_primary_keys\":[\"JOB_ID\"],\"_metadata_schema\":\"HR\",\"_metadata_row_id\":\"AAAEARAAEAAAAC9AAS\",\"_metadata_scn\":1706664,\"_metadata_ssn\":0,\"_metadata_rs_id\":\"\",\"_metadata_tx_id\":null,\"JOB_ID\":\"PR_REP\",\"JOB_TITLE\":\"Public"
+      "{\"_metadata_stream\":\"my-stream\",\"_metadata_timestamp\":1640410924,\"_metadata_read_timestamp\":1640410924,\"_metadata_read_method\":\"oracle-backfill\",\"_metadata_source_type\":\"oracle\",\"_metadata_deleted\":false,\"_metadata_database\":\"XE\",\"_metadata_schema\":\"HR\",\"_metadata_table\":\"JOBS\",\"_metadata_change_type\":\"INSERT\",\"_metadata_primary_keys\":[\"JOB_ID\"],\"_metadata_uuid\":\"00c32134-f50e-4460-a6c0-399900010010\",\"_metadata_row_id\":\"AAAEARAAEAAAAC9AAS\",\"_metadata_scn\":1706664,\"_metadata_ssn\":0,\"_metadata_rs_id\":\"\",\"_metadata_tx_id\":null,\"JOB_ID\":\"PR_REP\",\"JOB_TITLE\":\"Public"
           + " Relations"
           + " Representative\",\"MIN_SALARY\":4500,\"MAX_SALARY\":10500,\"rowid\":\"AAAEARAAEAAAAC9AAS\",\"_metadata_source\":{\"schema\":\"HR\",\"table\":\"JOBS\",\"database\":\"XE\",\"row_id\":\"AAAEARAAEAAAAC9AAS\",\"scn\":1706664,\"is_deleted\":false,\"change_type\":\"INSERT\",\"ssn\":0,\"rs_id\":\"\",\"tx_id\":null,\"log_file\":\"\",\"primary_keys\":[\"JOB_ID\"]}}";
 
   private static final String EXAMPLE_DATASTREAM_RECORD_WITH_HASH_ROWID =
-      "{\"_metadata_stream\":\"my-stream\",\"_metadata_timestamp\":1640410924,\"_metadata_read_timestamp\":1640410924,\"_metadata_read_method\":\"oracle-backfill\",\"_metadata_source_type\":\"oracle\",\"_metadata_deleted\":false,\"_metadata_table\":\"JOBS\",\"_metadata_change_type\":\"INSERT\",\"_metadata_primary_keys\":[\"JOB_ID\"],\"_metadata_schema\":\"HR\",\"_metadata_row_id\":1019670290924988842,\"_metadata_scn\":1706664,\"_metadata_ssn\":0,\"_metadata_rs_id\":\"\",\"_metadata_tx_id\":null,\"JOB_ID\":\"PR_REP\",\"JOB_TITLE\":\"Public"
+      "{\"_metadata_stream\":\"my-stream\",\"_metadata_timestamp\":1640410924,\"_metadata_read_timestamp\":1640410924,\"_metadata_read_method\":\"oracle-backfill\",\"_metadata_source_type\":\"oracle\",\"_metadata_deleted\":false,\"_metadata_database\":\"XE\",\"_metadata_schema\":\"HR\",\"_metadata_table\":\"JOBS\",\"_metadata_change_type\":\"INSERT\",\"_metadata_primary_keys\":[\"JOB_ID\"],\"_metadata_uuid\":\"00c32134-f50e-4460-a6c0-399900010010\",\"_metadata_row_id\":1019670290924988842,\"_metadata_scn\":1706664,\"_metadata_ssn\":0,\"_metadata_rs_id\":\"\",\"_metadata_tx_id\":null,\"JOB_ID\":\"PR_REP\",\"JOB_TITLE\":\"Public"
           + " Relations"
           + " Representative\",\"MIN_SALARY\":4500,\"MAX_SALARY\":10500,\"rowid\":1019670290924988842,\"_metadata_source\":{\"schema\":\"HR\",\"table\":\"JOBS\",\"database\":\"XE\",\"row_id\":\"AAAEARAAEAAAAC9AAS\",\"scn\":1706664,\"is_deleted\":false,\"change_type\":\"INSERT\",\"ssn\":0,\"rs_id\":\"\",\"tx_id\":null,\"log_file\":\"\",\"primary_keys\":[\"JOB_ID\"]}}";
 
@@ -58,6 +63,9 @@ public class FormatDatastreamJsonToJsonTest {
 
     FailsafeElement<String, String> expectedElement =
         FailsafeElement.of(EXAMPLE_DATASTREAM_RECORD, EXAMPLE_DATASTREAM_RECORD);
+
+    FailsafeElementCoder<String, String> failsafeElementCoder =
+        FailsafeElementCoder.of(StringUtf8Coder.of(), StringUtf8Coder.of());
 
     PCollection<FailsafeElement<String, String>> pCollection =
         pipeline
@@ -70,7 +78,9 @@ public class FormatDatastreamJsonToJsonTest {
                             .withStreamName("my-stream")
                             .withRenameColumnValues(renameColumns)
                             .withLowercaseSourceColumns(false)))
-            .setCoder(FailsafeElementCoder.of(StringUtf8Coder.of(), StringUtf8Coder.of()));
+            .setCoder(failsafeElementCoder)
+            .apply("RemoveTimestampProperty", ParDo.of(new RemoveTimestampPropertyFn()))
+            .setCoder(failsafeElementCoder);
 
     PAssert.that(pCollection).containsInAnyOrder(expectedElement);
 
@@ -85,6 +95,9 @@ public class FormatDatastreamJsonToJsonTest {
         FailsafeElement.of(
             EXAMPLE_DATASTREAM_RECORD_WITH_HASH_ROWID, EXAMPLE_DATASTREAM_RECORD_WITH_HASH_ROWID);
 
+    FailsafeElementCoder<String, String> failsafeElementCoder =
+        FailsafeElementCoder.of(StringUtf8Coder.of(), StringUtf8Coder.of());
+
     PCollection<FailsafeElement<String, String>> pCollection =
         pipeline
             .apply("CreateInput", Create.of(EXAMPLE_DATASTREAM_JSON))
@@ -97,10 +110,30 @@ public class FormatDatastreamJsonToJsonTest {
                             .withRenameColumnValues(renameColumns)
                             .withHashRowId(true)
                             .withLowercaseSourceColumns(false)))
-            .setCoder(FailsafeElementCoder.of(StringUtf8Coder.of(), StringUtf8Coder.of()));
+            .setCoder(failsafeElementCoder)
+            .apply("RemoveDataflowTimestampProperty", ParDo.of(new RemoveTimestampPropertyFn()))
+            .setCoder(failsafeElementCoder);
 
     PAssert.that(pCollection).containsInAnyOrder(expectedElement);
 
     pipeline.run();
+  }
+
+  // Static nested DoFn class to remove timestamp property
+  static class RemoveTimestampPropertyFn
+      extends DoFn<FailsafeElement<String, String>, FailsafeElement<String, String>> {
+
+    @ProcessElement
+    public void processElement(
+        @Element FailsafeElement<String, String> element,
+        OutputReceiver<FailsafeElement<String, String>> out)
+        throws JsonProcessingException {
+      ObjectMapper mapper = new ObjectMapper();
+      JsonNode changeEvent = mapper.readTree(element.getPayload());
+      if (changeEvent instanceof ObjectNode) {
+        ((ObjectNode) changeEvent).remove("_metadata_dataflow_timestamp");
+      }
+      out.output(FailsafeElement.of(changeEvent.toString(), changeEvent.toString()));
+    }
   }
 }

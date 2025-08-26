@@ -55,7 +55,9 @@ public abstract class DatastreamToDML
   private CdcJdbcIO.DataSourceConfiguration dataSourceConfiguration;
   private DataSource dataSource;
   public String quoteCharacter;
-  protected Map<String, String> schemaMap = new HashMap<String, String>();
+  protected Map<String, String> schemaMappings = new HashMap<>();
+  protected Map<String, String> tableMappings = new HashMap<>();
+  protected Boolean orderByIncludesIsDeleted = false;
 
   public abstract String getDefaultQuoteCharacter();
 
@@ -68,8 +70,6 @@ public abstract class DatastreamToDML
   public abstract String getTargetCatalogName(DatastreamRow row);
 
   public abstract String getTargetSchemaName(DatastreamRow row);
-
-  public abstract String getTargetTableName(DatastreamRow row);
 
   /* An exception for delete DML without a primary key */
   private class DeletedWithoutPrimaryKey extends RuntimeException {
@@ -88,8 +88,24 @@ public abstract class DatastreamToDML
     return this;
   }
 
-  public DatastreamToDML withSchemaMap(Map<String, String> schemaMap) {
-    this.schemaMap = schemaMap;
+  public DatastreamToDML withSchemaMap(Map<String, String> combinedMap) {
+    for (Map.Entry<String, String> entry : combinedMap.entrySet()) {
+      if (entry.getKey().contains(".")) {
+        this.tableMappings.put(entry.getKey(), entry.getValue());
+      } else {
+        this.schemaMappings.put(entry.getKey(), entry.getValue());
+      }
+    }
+    return this;
+  }
+
+  public DatastreamToDML withTableNameMap(Map<String, String> tableNameMap) {
+    this.tableMappings = tableNameMap;
+    return this;
+  }
+
+  public DatastreamToDML withOrderByIncludesIsDeleted(Boolean orderByIncludesIsDeleted) {
+    this.orderByIncludesIsDeleted = orderByIncludesIsDeleted;
     return this;
   }
 
@@ -97,7 +113,6 @@ public abstract class DatastreamToDML
   public void processElement(ProcessContext context) {
     FailsafeElement<String, String> element = context.element();
     String jsonString = element.getPayload();
-
     ObjectMapper mapper = new ObjectMapper();
     JsonNode rowObj;
 
@@ -116,25 +131,6 @@ public abstract class DatastreamToDML
       // TODO(dhercher): Push failure to DLQ collection
       LOG.error("IOException: {} :: {}", jsonString, e.toString());
     }
-  }
-
-  protected String cleanTableName(String tableName) {
-    return applyLowercase(tableName);
-  }
-
-  protected String cleanSchemaName(String schemaName) {
-    schemaName = applySchemaMap(schemaName);
-    schemaName = applyLowercase(schemaName);
-
-    return schemaName;
-  }
-
-  protected String applySchemaMap(String sourceSchema) {
-    return schemaMap.getOrDefault(sourceSchema, sourceSchema);
-  }
-
-  protected String applyLowercase(String name) {
-    return name.toLowerCase();
   }
 
   // TODO(dhercher): Only if source is oracle, pull from DatastreamRow
@@ -174,6 +170,19 @@ public abstract class DatastreamToDML
     }
 
     return this.tableCache.get(searchKey);
+  }
+
+  protected String getFullSourceTableName(DatastreamRow row) {
+    return row.getSchemaName() + "." + row.getTableName();
+  }
+
+  public String getTargetTableName(DatastreamRow row) {
+    String fullSourceTableName = getFullSourceTableName(row);
+    if (tableMappings.containsKey(fullSourceTableName)) {
+      return tableMappings.get(fullSourceTableName).split("\\.")[1];
+    }
+    // No other rules apply, just default to lowercase.
+    return row.getTableName().toLowerCase();
   }
 
   public List<String> getPrimaryKeys(
@@ -217,16 +226,19 @@ public abstract class DatastreamToDML
       }
 
       List<String> primaryKeys = this.getPrimaryKeys(catalogName, schemaName, tableName, rowObj);
-      List<String> orderByFields = row.getSortFields();
-      List<String> primaryKeyValues = getFieldValues(rowObj, primaryKeys, tableSchema);
-      List<String> orderByValues = getFieldValues(rowObj, orderByFields, tableSchema);
+      List<String> orderByFields = row.getSortFields(orderByIncludesIsDeleted);
+      List<String> primaryKeyValues = getFieldValues(rowObj, primaryKeys, tableSchema, false);
+      List<String> orderByValues =
+          getFieldValues(rowObj, orderByFields, tableSchema, orderByIncludesIsDeleted);
 
       String dmlSqlTemplate = getDmlTemplate(rowObj, primaryKeys);
       Map<String, String> sqlTemplateValues =
           getSqlTemplateValues(
               rowObj, catalogName, schemaName, tableName, primaryKeys, tableSchema);
 
-      String dmlSql = StringSubstitutor.replace(dmlSqlTemplate, sqlTemplateValues, "{", "}");
+      StringSubstitutor stringSubstitutor = new StringSubstitutor(sqlTemplateValues, "{", "}");
+      String dmlSql =
+          stringSubstitutor.setDisableSubstitutionInValues(true).replace(dmlSqlTemplate);
       return DmlInfo.of(
           failsafeValue,
           dmlSql,
@@ -284,7 +296,6 @@ public abstract class DatastreamToDML
 
   public String getValueSql(JsonNode rowObj, String columnName, Map<String, String> tableSchema) {
     String columnValue;
-
     JsonNode columnObj = rowObj.get(columnName);
     if (columnObj == null) {
       LOG.warn("Missing Required Value: {} in {}", columnName, rowObj.toString());
@@ -295,7 +306,6 @@ public abstract class DatastreamToDML
     } else {
       columnValue = columnObj.toString();
     }
-
     return cleanDataTypeValueSql(columnValue, columnName, tableSchema);
   }
 
@@ -322,11 +332,19 @@ public abstract class DatastreamToDML
   }
 
   public List<String> getFieldValues(
-      JsonNode rowObj, List<String> fieldNames, Map<String, String> tableSchema) {
+      JsonNode rowObj,
+      List<String> fieldNames,
+      Map<String, String> tableSchema,
+      Boolean overrideIsDeleted) {
     List<String> fieldValues = new ArrayList<String>();
 
     for (String fieldName : fieldNames) {
-      fieldValues.add(getValueSql(rowObj, fieldName, tableSchema));
+      if (overrideIsDeleted && fieldName == "_metadata_deleted") {
+        String val = getValueSql(rowObj, fieldName, tableSchema);
+        fieldValues.add(val == "true" ? "1" : "0");
+      } else {
+        fieldValues.add(getValueSql(rowObj, fieldName, tableSchema));
+      }
     }
 
     return fieldValues;

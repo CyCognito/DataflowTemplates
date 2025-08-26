@@ -6,22 +6,22 @@ A pipeline which sends Kinesis Datastream records into a Pubsub topic.
 
 
 :bulb: This is a generated documentation based
-on [Metadata Annotations](https://github.com/GoogleCloudPlatform/DataflowTemplates#metadata-annotations)
+on [Metadata Annotations](https://github.com/GoogleCloudPlatform/DataflowTemplates/blob/main/contributor-docs/code-contributions.md#metadata-annotations)
 . Do not change this file directly.
 
 ## Parameters
 
 ### Required parameters
 
-* **secretId1** : First Secret ID containing aws key id.
-* **secretId2** : Second Secret ID containing aws key id.
-* **awsRegion** : AWS Region.
-* **kinesisDataStream** : Name of the Kinesis Data stream to read from. Enter the full name of the Kinesis Data stream.
-* **outputPubsubTopic** : The name of the topic to which data should published, in the format of 'projects/your-project-id/topics/your-topic-name' (Example: projects/your-project-id/topics/your-topic-name).
+* **secretId1**: First Secret ID containing aws key id.
+* **secretId2**: Second Secret ID containing aws key id.
+* **awsRegion**: AWS Region.
+* **kinesisDataStream**: Name of the Kinesis Data stream to read from. Enter the full name of the Kinesis Data stream.
+* **outputPubsubTopic**: The name of the topic to which data should published, in the format of 'projects/your-project-id/topics/your-topic-name' For example, `projects/your-project-id/topics/your-topic-name`.
 
 ### Optional parameters
 
-* **awsDataFormat** : Data format of input.
+* **awsDataFormat**: Data format of input.
 
 
 
@@ -29,7 +29,7 @@ on [Metadata Annotations](https://github.com/GoogleCloudPlatform/DataflowTemplat
 
 ### Requirements
 
-* Java 11
+* Java 17
 * Maven
 * [gcloud CLI](https://cloud.google.com/sdk/gcloud), and execution of the
   following commands:
@@ -202,7 +202,7 @@ resource "google_dataflow_flex_template_job" "kinesis_to_pubsub" {
     secretId2 = "<secretId2>"
     awsRegion = "<awsRegion>"
     kinesisDataStream = "<kinesisDataStream>"
-    outputPubsubTopic = "projects/your-project-id/topics/your-topic-name"
+    outputPubsubTopic = "<outputPubsubTopic>"
     # awsDataFormat = "<awsDataFormat>"
   }
 }

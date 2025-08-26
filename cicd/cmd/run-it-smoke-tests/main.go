@@ -34,14 +34,14 @@ func main() {
 	mvnFlags := workflows.NewMavenFlags()
 	err := workflows.MvnCleanInstall().Run(
 		mvnFlags.IncludeDependencies(),
-		mvnFlags.IncludeDependents(),
 		mvnFlags.SkipDependencyAnalysis(),
 		mvnFlags.SkipCheckstyle(),
 		mvnFlags.SkipJib(),
 		mvnFlags.SkipTests(),
 		mvnFlags.SkipJacoco(),
 		mvnFlags.SkipShade(),
-		mvnFlags.ThreadCount(8))
+		mvnFlags.ThreadCount(8),
+		mvnFlags.InternalMaven())
 	if err != nil {
 		log.Fatalf("%v\n", err)
 	}
@@ -50,7 +50,6 @@ func main() {
 	mvnFlags = workflows.NewMavenFlags()
 	err = workflows.MvnVerify().Run(
 		mvnFlags.IncludeDependencies(),
-		mvnFlags.IncludeDependents(),
 		mvnFlags.SkipDependencyAnalysis(),
 		mvnFlags.SkipCheckstyle(),
 		mvnFlags.SkipJib(),
@@ -59,6 +58,7 @@ func main() {
 		mvnFlags.IntegrationTestParallelism(4),
 		mvnFlags.StaticBigtableInstance("teleport"),
 		mvnFlags.StaticSpannerInstance("teleport"),
+		mvnFlags.InternalMaven(),
 		flags.Region(),
 		flags.Project(),
 		flags.ArtifactBucket(),

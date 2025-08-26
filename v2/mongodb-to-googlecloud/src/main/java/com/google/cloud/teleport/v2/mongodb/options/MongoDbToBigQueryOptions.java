@@ -60,10 +60,14 @@ public class MongoDbToBigQueryOptions {
 
     @TemplateParameter.Enum(
         order = 4,
-        enumOptions = {@TemplateEnumOption("FLATTEN"), @TemplateEnumOption("NONE")},
+        enumOptions = {
+          @TemplateEnumOption("FLATTEN"),
+          @TemplateEnumOption("JSON"),
+          @TemplateEnumOption("NONE")
+        },
         description = "User option",
         helpText =
-            "`FLATTEN` or `NONE`. `FLATTEN` flattens the documents to the single level. `NONE` stores the whole document as a JSON string.")
+            "`FLATTEN`, `JSON`, or `NONE`. `FLATTEN` flattens the documents to the single level. `JSON` stores document in BigQuery JSON format. `NONE` stores the whole document as a JSON-formatted STRING.")
     @Default.String("NONE")
     String getUserOption();
 
@@ -101,7 +105,7 @@ public class MongoDbToBigQueryOptions {
         groupName = "Source",
         description = "Pub/Sub input topic",
         helpText =
-            "The Pub/Sub input topic to read from, in the format of projects/<PROJECT_ID>/topics/<TOPIC_NAME>.")
+            "The Pub/Sub input topic to read from, in the format of `projects/<PROJECT_ID>/topics/<TOPIC_NAME>`.")
     String getInputTopic();
 
     void setInputTopic(String inputTopic);

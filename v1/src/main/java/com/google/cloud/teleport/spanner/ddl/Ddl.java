@@ -50,9 +50,12 @@ public class Ddl implements Serializable {
 
   private ImmutableSortedMap<String, Table> tables;
   private ImmutableSortedMap<String, Model> models;
+  private ImmutableSortedMap<String, PropertyGraph> propertyGraphs;
   private ImmutableSortedMap<String, View> views;
+  private ImmutableSortedMap<String, Udf> udfs;
   private ImmutableSortedMap<String, ChangeStream> changeStreams;
   private ImmutableSortedMap<String, Sequence> sequences;
+  private ImmutableSortedMap<String, Placement> placements;
   private ImmutableSortedMap<String, NamedSchema> schemas;
   private TreeMultimap<String, String> parents;
   // This is only populated by InformationSchemaScanner and not while reading from AVRO files.
@@ -65,9 +68,12 @@ public class Ddl implements Serializable {
   private Ddl(
       ImmutableSortedMap<String, Table> tables,
       ImmutableSortedMap<String, Model> models,
+      ImmutableSortedMap<String, PropertyGraph> propertyGraphs,
       ImmutableSortedMap<String, View> views,
+      ImmutableSortedMap<String, Udf> udfs,
       ImmutableSortedMap<String, ChangeStream> changeStreams,
       ImmutableSortedMap<String, Sequence> sequences,
+      ImmutableSortedMap<String, Placement> placements,
       ImmutableSortedMap<String, NamedSchema> schemas,
       TreeMultimap<String, String> parents,
       TreeMultimap<String, String> referencedTables,
@@ -77,9 +83,12 @@ public class Ddl implements Serializable {
       Dialect dialect) {
     this.tables = tables;
     this.models = models;
+    this.propertyGraphs = propertyGraphs;
     this.views = views;
+    this.udfs = udfs;
     this.changeStreams = changeStreams;
     this.sequences = sequences;
+    this.placements = placements;
     this.schemas = schemas;
     this.parents = parents;
     this.referencedTables = referencedTables;
@@ -151,12 +160,28 @@ public class Ddl implements Serializable {
     return models.get(modelName.toLowerCase());
   }
 
+  public Collection<PropertyGraph> propertyGraphs() {
+    return propertyGraphs.values();
+  }
+
+  public PropertyGraph propertyGraph(String propertyGraphName) {
+    return propertyGraphs.get(propertyGraphName.toLowerCase());
+  }
+
   public Collection<View> views() {
     return views.values();
   }
 
   public View view(String viewName) {
     return views.get(viewName.toLowerCase());
+  }
+
+  public Collection<Udf> udfs() {
+    return udfs.values();
+  }
+
+  public Udf udf(String udfName) {
+    return udfs.get(udfName.toLowerCase());
   }
 
   public Collection<ChangeStream> changeStreams() {
@@ -173,6 +198,14 @@ public class Ddl implements Serializable {
 
   public Sequence sequence(String sequenceName) {
     return sequences.get(sequenceName.toLowerCase());
+  }
+
+  public Collection<Placement> placements() {
+    return placements.values();
+  }
+
+  public Placement placement(String placementName) {
+    return placements.get(placementName.toLowerCase());
   }
 
   public Collection<NamedSchema> schemas() {
@@ -244,14 +277,29 @@ public class Ddl implements Serializable {
       model.prettyPrint(appendable);
     }
 
+    for (PropertyGraph graph : propertyGraphs()) {
+      appendable.append("\n");
+      graph.prettyPrint(appendable);
+    }
+
     for (View view : views()) {
       appendable.append("\n");
       view.prettyPrint(appendable);
     }
 
+    for (Udf udf : udfs()) {
+      appendable.append("\n");
+      udf.prettyPrint(appendable);
+    }
+
     for (ChangeStream changeStream : changeStreams()) {
       appendable.append("\n");
       changeStream.prettyPrint(appendable);
+    }
+
+    for (Placement placement : placements()) {
+      appendable.append("\n");
+      placement.prettyPrint(appendable);
     }
   }
 
@@ -269,8 +317,11 @@ public class Ddl implements Serializable {
         .addAll(createIndexStatements())
         .addAll(addForeignKeyStatements())
         .addAll(createModelStatements())
+        .addAll(createPropertyGraphStatements())
         .addAll(createViewStatements())
+        .addAll(createUdfStatements())
         .addAll(createChangeStreamStatements())
+        .addAll(createPlacementStatements())
         .addAll(setOptionsStatements("%db_name%"));
     return builder.build();
   }
@@ -337,10 +388,26 @@ public class Ddl implements Serializable {
     return result;
   }
 
+  public List<String> createPropertyGraphStatements() {
+    List<String> result = new ArrayList<>(propertyGraphs.size());
+    for (PropertyGraph propertyGraph : propertyGraphs.values()) {
+      result.add(propertyGraph.prettyPrint());
+    }
+    return result;
+  }
+
   public List<String> createViewStatements() {
     List<String> result = new ArrayList<>(views.size());
     for (View view : views.values()) {
       result.add(view.prettyPrint());
+    }
+    return result;
+  }
+
+  public List<String> createUdfStatements() {
+    List<String> result = new ArrayList<>(udfs.size());
+    for (Udf udf : udfs.values()) {
+      result.add(udf.prettyPrint());
     }
     return result;
   }
@@ -357,6 +424,14 @@ public class Ddl implements Serializable {
     List<String> result = new ArrayList<>(sequences.size());
     for (Sequence sequence : sequences()) {
       result.add(sequence.prettyPrint());
+    }
+    return result;
+  }
+
+  public List<String> createPlacementStatements() {
+    List<String> result = new ArrayList<>(placements.size());
+    for (Placement placement : placements()) {
+      result.add(placement.prettyPrint());
     }
     return result;
   }
@@ -456,9 +531,12 @@ public class Ddl implements Serializable {
 
     private Map<String, Table> tables = Maps.newLinkedHashMap();
     private Map<String, Model> models = Maps.newLinkedHashMap();
+    private Map<String, PropertyGraph> propertyGraphs = Maps.newLinkedHashMap();
     private Map<String, View> views = Maps.newLinkedHashMap();
+    private Map<String, Udf> udfs = Maps.newLinkedHashMap();
     private Map<String, ChangeStream> changeStreams = Maps.newLinkedHashMap();
     private Map<String, Sequence> sequences = Maps.newLinkedHashMap();
+    private Map<String, Placement> placements = Maps.newLinkedHashMap();
     private Map<String, NamedSchema> schemas = Maps.newLinkedHashMap();
     private TreeMultimap<String, String> parents = TreeMultimap.create();
     private TreeMultimap<String, String> referencedTables = TreeMultimap.create();
@@ -511,6 +589,26 @@ public class Ddl implements Serializable {
       return models.containsKey(name.toLowerCase());
     }
 
+    public PropertyGraph.Builder createPropertyGraph(String name) {
+      PropertyGraph graph = propertyGraphs.get(name.toLowerCase());
+      if (graph == null) {
+        return PropertyGraph.builder(dialect).name(name).ddlBuilder(this);
+      }
+      return graph.toBuilder().ddlBuilder(this);
+    }
+
+    public void addPropertyGraph(PropertyGraph graph) {
+      propertyGraphs.put(graph.name().toLowerCase(), graph);
+    }
+
+    public boolean hasPropertyGraph(String name) {
+      return propertyGraphs.containsKey(name.toLowerCase());
+    }
+
+    public Collection<PropertyGraph> propertyGraphs() {
+      return propertyGraphs.values();
+    }
+
     public View.Builder createView(String name) {
       View view = views.get(name.toLowerCase());
       if (view == null) {
@@ -525,6 +623,22 @@ public class Ddl implements Serializable {
 
     public boolean hasView(String name) {
       return views.containsKey(name.toLowerCase());
+    }
+
+    public Udf.Builder createUdf(String specificName) {
+      Udf udf = udfs.get(specificName.toLowerCase());
+      if (udf == null) {
+        return Udf.builder().specificName(specificName).ddlBuilder(this);
+      }
+      return udf.toBuilder().ddlBuilder(this);
+    }
+
+    public void addUdf(Udf udf) {
+      udfs.put(udf.specificName().toLowerCase(), udf);
+    }
+
+    public boolean hasUdf(String specificName) {
+      return udfs.containsKey(specificName.toLowerCase());
     }
 
     public ChangeStream.Builder createChangeStream(String name) {
@@ -553,6 +667,22 @@ public class Ddl implements Serializable {
 
     public void addSequence(Sequence sequence) {
       sequences.put(sequence.name().toLowerCase(), sequence);
+    }
+
+    public Placement.Builder createPlacement(String name) {
+      Placement placement = placements.get(name.toLowerCase());
+      if (placement == null) {
+        return Placement.builder(dialect).name(name).ddlBuilder(this);
+      }
+      return placement.toBuilder().ddlBuilder(this);
+    }
+
+    public void addPlacement(Placement placement) {
+      placements.put(placement.name().toLowerCase(), placement);
+    }
+
+    public boolean hasPlacement(String name) {
+      return placements.containsKey(name.toLowerCase());
     }
 
     public NamedSchema.Builder createSchema(String name) {
@@ -610,9 +740,12 @@ public class Ddl implements Serializable {
       return new Ddl(
           ImmutableSortedMap.copyOf(tables),
           ImmutableSortedMap.copyOf(models),
+          ImmutableSortedMap.copyOf(propertyGraphs),
           ImmutableSortedMap.copyOf(views),
+          ImmutableSortedMap.copyOf(udfs),
           ImmutableSortedMap.copyOf(changeStreams),
           ImmutableSortedMap.copyOf(sequences),
+          ImmutableSortedMap.copyOf(placements),
           ImmutableSortedMap.copyOf(schemas),
           parents,
           referencedTables,
@@ -628,9 +761,12 @@ public class Ddl implements Serializable {
     builder.schemas.putAll(schemas);
     builder.tables.putAll(tables);
     builder.models.putAll(models);
+    builder.propertyGraphs.putAll(propertyGraphs);
     builder.views.putAll(views);
+    builder.udfs.putAll(udfs);
     builder.changeStreams.putAll(changeStreams);
     builder.sequences.putAll(sequences);
+    builder.placements.putAll(placements);
     builder.parents.putAll(parents);
     builder.referencedTables.putAll(referencedTables);
     builder.databaseOptions = databaseOptions;
@@ -667,7 +803,15 @@ public class Ddl implements Serializable {
     if (models != null ? !models.equals(ddl.models) : ddl.models != null) {
       return false;
     }
+    if (propertyGraphs != null
+        ? !propertyGraphs.equals(ddl.propertyGraphs)
+        : ddl.propertyGraphs != null) {
+      return false;
+    }
     if (views != null ? !views.equals(ddl.views) : ddl.views != null) {
+      return false;
+    }
+    if (udfs != null ? !udfs.equals(ddl.udfs) : ddl.udfs != null) {
       return false;
     }
     if (changeStreams != null
@@ -676,6 +820,9 @@ public class Ddl implements Serializable {
       return false;
     }
     if (sequences != null ? !sequences.equals(ddl.sequences) : ddl.sequences != null) {
+      return false;
+    }
+    if (placements != null ? !placements.equals(ddl.placements) : ddl.placements != null) {
       return false;
     }
     if (protoDescriptors != null
@@ -693,9 +840,12 @@ public class Ddl implements Serializable {
     result = 31 * result + (parents != null ? parents.hashCode() : 0);
     result = 31 * result + (referencedTables != null ? referencedTables.hashCode() : 0);
     result = 31 * result + (models != null ? models.hashCode() : 0);
+    result = 31 * result + (propertyGraphs != null ? propertyGraphs.hashCode() : 0);
     result = 31 * result + (views != null ? views.hashCode() : 0);
+    result = 31 * result + (udfs != null ? udfs.hashCode() : 0);
     result = 31 * result + (changeStreams != null ? changeStreams.hashCode() : 0);
     result = 31 * result + (sequences != null ? sequences.hashCode() : 0);
+    result = 31 * result + (placements != null ? placements.hashCode() : 0);
     result = 31 * result + (databaseOptions != null ? databaseOptions.hashCode() : 0);
     result = 31 * result + (protoBundle != null ? protoBundle.hashCode() : 0);
     result = 31 * result + (protoDescriptors != null ? protoDescriptors.hashCode() : 0);

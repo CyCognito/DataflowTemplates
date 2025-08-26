@@ -28,7 +28,10 @@ import com.google.cloud.teleport.spanner.common.Type.StructField;
 import com.google.cloud.teleport.spanner.ddl.Ddl;
 import com.google.cloud.teleport.spanner.ddl.InformationSchemaScanner;
 import com.google.cloud.teleport.spanner.ddl.RandomDdlGenerator;
+import com.google.cloud.teleport.spanner.ddl.Udf.SqlSecurity;
+import com.google.cloud.teleport.spanner.ddl.UdfParameter;
 import com.google.cloud.teleport.spanner.proto.ExportProtos.Export;
+import com.google.cloud.teleport.spanner.spannerio.SpannerConfig;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import java.sql.Timestamp;
@@ -36,7 +39,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import org.apache.beam.sdk.PipelineResult;
-import org.apache.beam.sdk.io.gcp.spanner.SpannerConfig;
 import org.apache.beam.sdk.options.ValueProvider;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
@@ -674,8 +676,9 @@ public class CopyDbTest {
            "ALTER TABLE `Child` ADD CONSTRAINT `fk1` FOREIGN KEY (`id1`) REFERENCES `Ref` (`id1`)",
            "ALTER TABLE `Child` ADD CONSTRAINT `fk2` FOREIGN KEY (`id2`) REFERENCES `Ref` (`id2`)",
            "ALTER TABLE `Child` ADD CONSTRAINT `fk3` FOREIGN KEY (`id2`) REFERENCES `Ref` (`id2`)",
-           "ALTER TABLE `Child` ADD CONSTRAINT `fk4` FOREIGN KEY (`id2`, `id1`) "
-               + "REFERENCES `Ref` (`id2`, `id1`)"))
+           "ALTER TABLE `Child` ADD CONSTRAINT `fk4` FOREIGN KEY (`id2`, `id1`) REFERENCES `Ref` (`id2`, `id1`)",
+           "ALTER TABLE `Child` ADD CONSTRAINT `fk5` FOREIGN KEY (`id2`) REFERENCES `Ref` (`id2`) NOT ENFORCED",
+           "ALTER TABLE `Child` ADD CONSTRAINT `fk6` FOREIGN KEY (`id2`) REFERENCES `Ref` (`id2`) ENFORCED"))
         .endTable()
         .build();
     // spotless:on
@@ -905,9 +908,146 @@ public class CopyDbTest {
   }
 
   @Test
-  public void sequences() throws Exception {
+  public void identityColumn() throws Exception {
+    // spotless:off
+    Ddl.Builder ddlBuilder = Ddl.builder();
+    List<Export.DatabaseOption> dbOptionList = new ArrayList<>();
+    dbOptionList.add(
+        Export.DatabaseOption.newBuilder()
+            .setOptionName("default_sequence_kind")
+            .setOptionValue("\"bit_reversed_positive\"")
+            .build());
+    ddlBuilder.mergeDatabaseOptions(dbOptionList);
+    Ddl ddl = ddlBuilder
+        .createTable("IdentityTable")
+          .column("id")
+            .int64()
+            .isIdentityColumn(true)
+            .sequenceKind("bit_reversed_positive")
+            .counterStartValue(1000L)
+            .skipRangeMin(2000L)
+            .skipRangeMax(3000L)
+          .endColumn()
+          .column("non_key_column")
+            .int64()
+            .isIdentityColumn(true)
+            .sequenceKind("bit_reversed_positive")
+            .counterStartValue(1000L)
+            .skipRangeMin(2000L)
+            .skipRangeMax(3000L)
+          .endColumn()
+          .column("no_sequence_kind_column")
+            .int64()
+            .isIdentityColumn(true)
+            .sequenceKind("default")
+            .counterStartValue(1000L)
+            .skipRangeMin(2000L)
+            .skipRangeMax(3000L)
+          .endColumn()
+          .column("value").int64().endColumn()
+          .primaryKey().asc("id").end()
+        .endTable()
+        .build();
+    // spotless:on
+
+    createAndPopulate(ddl, 10);
+    runTest();
+  }
+
+  @Test
+  public void pgIdentityColumn() throws Exception {
+    // spotless:off
+    Ddl.Builder ddlBuilder = Ddl.builder(Dialect.POSTGRESQL);
+    List<Export.DatabaseOption> dbOptionList = new ArrayList<>();
+    dbOptionList.add(
+        Export.DatabaseOption.newBuilder()
+            .setOptionName("default_sequence_kind")
+            .setOptionValue("\"bit_reversed_positive\"")
+            .build());
+    ddlBuilder.mergeDatabaseOptions(dbOptionList);
+    Ddl ddl = ddlBuilder
+        .createTable("IdentityTable")
+          .column("id")
+            .int64()
+            .isIdentityColumn(true)
+            .sequenceKind("bit_reversed_positive")
+            .counterStartValue(1000L)
+            .skipRangeMin(2000L)
+            .skipRangeMax(3000L)
+          .endColumn()
+          .column("non_key_column")
+            .int64()
+            .isIdentityColumn(true)
+            .sequenceKind("bit_reversed_positive")
+            .counterStartValue(1000L)
+            .skipRangeMin(2000L)
+            .skipRangeMax(3000L)
+          .endColumn()
+          .column("no_sequence_kind_column")
+            .int64()
+            .isIdentityColumn(true)
+            .sequenceKind("default")
+            .counterStartValue(1000L)
+            .skipRangeMin(2000L)
+            .skipRangeMax(3000L)
+          .endColumn()
+          .column("value").int64().endColumn()
+          .primaryKey().asc("id").end()
+        .endTable()
+        .build();
+    // spotless:on
+
+    createAndPopulate(ddl, 10);
+    runTest(Dialect.POSTGRESQL);
+  }
+
+  @Test
+  public void udfs() throws Exception {
+    Ddl.Builder ddlBuilder = Ddl.builder();
+    List<Export.DatabaseOption> dbOptionList = new ArrayList<>();
+    dbOptionList.add(
+        Export.DatabaseOption.newBuilder()
+            .setOptionName("default_sequence_kind")
+            .setOptionValue("\"bit_reversed_positive\"")
+            .build());
+    ddlBuilder.mergeDatabaseOptions(dbOptionList);
     Ddl ddl =
-        Ddl.builder()
+        ddlBuilder
+            .createSchema("s1")
+            .endNamedSchema()
+            .createUdf("s1.Foo1")
+            .dialect(Dialect.GOOGLE_STANDARD_SQL)
+            .name("s1.Foo1")
+            .definition("(SELECT 'bar')")
+            .endUdf()
+            .createUdf("s1.Foo2")
+            .dialect(Dialect.GOOGLE_STANDARD_SQL)
+            .name("s1.Foo2")
+            .definition("(SELECT 'bar')")
+            .security(SqlSecurity.INVOKER)
+            .type("STRING")
+            .addParameter(UdfParameter.parse("arg0 STRING", "s1.Foo2", Dialect.GOOGLE_STANDARD_SQL))
+            .addParameter(
+                UdfParameter.parse(
+                    "arg1 STRING DEFAULT 'bar'", "s1.Foo2", Dialect.GOOGLE_STANDARD_SQL))
+            .endUdf()
+            .build();
+    createAndPopulate(ddl, 0);
+    runTest();
+  }
+
+  @Test
+  public void sequences() throws Exception {
+    Ddl.Builder ddlBuilder = Ddl.builder();
+    List<Export.DatabaseOption> dbOptionList = new ArrayList<>();
+    dbOptionList.add(
+        Export.DatabaseOption.newBuilder()
+            .setOptionName("default_sequence_kind")
+            .setOptionValue("\"bit_reversed_positive\"")
+            .build());
+    ddlBuilder.mergeDatabaseOptions(dbOptionList);
+    Ddl ddl =
+        ddlBuilder
             .createSequence("Sequence1")
             .options(
                 ImmutableList.of(
@@ -923,6 +1063,14 @@ public class CopyDbTest {
             .endSequence()
             .createSequence("Sequence3")
             .options(ImmutableList.of("sequence_kind=\"bit_reversed_positive\""))
+            .endSequence()
+            .createSequence("Sequence4")
+            .options(
+                ImmutableList.of(
+                    "sequence_kind=\"default\"",
+                    "skip_range_min=0",
+                    "skip_range_max=1000",
+                    "start_with_counter=50"))
             .endSequence()
             .createTable("UsersWithSequenceId")
             .column("id")
@@ -945,8 +1093,16 @@ public class CopyDbTest {
 
   @Test
   public void pgSequences() throws Exception {
+    Ddl.Builder ddlBuilder = Ddl.builder(Dialect.POSTGRESQL);
+    List<Export.DatabaseOption> dbOptionList = new ArrayList<>();
+    dbOptionList.add(
+        Export.DatabaseOption.newBuilder()
+            .setOptionName("default_sequence_kind")
+            .setOptionValue("\"bit_reversed_positive\"")
+            .build());
+    ddlBuilder.mergeDatabaseOptions(dbOptionList);
     Ddl ddl =
-        Ddl.builder(Dialect.POSTGRESQL)
+        ddlBuilder
             .createSequence("PGSequence1")
             .sequenceKind("bit_reversed_positive")
             .counterStartValue(Long.valueOf(50))
@@ -959,6 +1115,12 @@ public class CopyDbTest {
             .endSequence()
             .createSequence("PGSequence3")
             .sequenceKind("bit_reversed_positive")
+            .endSequence()
+            .createSequence("PGSequence4")
+            .sequenceKind("default")
+            .counterStartValue(Long.valueOf(50))
+            .skipRangeMin(Long.valueOf(0))
+            .skipRangeMax(Long.valueOf(1000))
             .endSequence()
             .createTable("PGUsersWithSequenceId")
             .column("id")

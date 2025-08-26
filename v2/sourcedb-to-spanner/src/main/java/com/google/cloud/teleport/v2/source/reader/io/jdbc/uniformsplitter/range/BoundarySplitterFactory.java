@@ -15,29 +15,59 @@
  */
 package com.google.cloud.teleport.v2.source.reader.io.jdbc.uniformsplitter.range;
 
+import static com.google.cloud.teleport.v2.source.reader.io.jdbc.uniformsplitter.range.BoundaryExtractorFactory.BYTE_ARRAY_CLASS;
+
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.sql.Timestamp;
+import java.time.Duration;
+import java.time.Instant;
 import org.apache.beam.sdk.transforms.DoFn;
 
 /** Factory to construct {@link BoundarySplitter} for supported classes. */
 public class BoundarySplitterFactory {
+
+  private static final BigInteger SECONDS_TO_NANOS =
+      BigInteger.valueOf(Duration.ofSeconds(1).toNanos());
+
   private static final ImmutableMap<Class, BoundarySplitter<?>> splittermap =
-      ImmutableMap.of(
-          Integer.class,
+      ImmutableMap.<Class, BoundarySplitter<?>>builder()
+          .put(
+              Integer.class,
               (BoundarySplitter<Integer>)
                   (start, end, partitionColumn, boundaryTypeMapper, processContext) ->
-                      splitIntegers(start, end),
-          Long.class,
+                      splitIntegers(start, end))
+          .put(
+              Long.class,
               (BoundarySplitter<Long>)
                   (start, end, partitionColumn, boundaryTypeMapper, processContext) ->
-                      splitLongs(start, end),
-          BigInteger.class,
+                      splitLongs(start, end))
+          .put(
+              BigInteger.class,
               (BoundarySplitter<BigInteger>)
                   (start, end, partitionColumn, boundaryTypeMapper, processContext) ->
-                      splitBigIntegers(start, end),
-          String.class, (BoundarySplitter<String>) BoundarySplitterFactory::splitStrings);
+                      splitBigIntegers(start, end))
+          .put(
+              BigDecimal.class,
+              (BoundarySplitter<BigDecimal>)
+                  (start, end, partitionColumn, boundaryTypeMapper, processContext) ->
+                      splitBigDecimal(start, end))
+          .put(String.class, (BoundarySplitter<String>) BoundarySplitterFactory::splitStrings)
+          .put(
+              BYTE_ARRAY_CLASS,
+              (BoundarySplitter<byte[]>)
+                  (start, end, partitionColumn, boundaryTypeMapper, processContext) ->
+                      splitBytes(start, end))
+          .put(
+              Timestamp.class,
+              (BoundarySplitter<Timestamp>)
+                  (start, end, partitionColumn, boundaryTypeMapper, processContext) ->
+                      splitTimestamps(start, end))
+          .build();
 
   /**
    * Creates {@link BoundarySplitter BoundarySplitter&lt;T&gt;} for pass class {@code c} such that
@@ -132,6 +162,26 @@ public class BoundarySplitterFactory {
     return (start & end) + ((start ^ end) >> 1);
   }
 
+  private static BigDecimal splitBigDecimal(BigDecimal start, BigDecimal end) {
+    BigInteger startBigInt = (start == null) ? null : start.toBigInteger();
+    BigInteger endBigInt = (end == null) ? null : end.toBigInteger();
+    BigInteger split = splitBigIntegers(startBigInt, endBigInt);
+    if (split == null) {
+      return null;
+    }
+    return new BigDecimal(split);
+  }
+
+  private static byte[] splitBytes(byte[] start, byte[] end) {
+    BigInteger startBigInt = (start == null) ? null : new BigInteger(start);
+    BigInteger endBigInt = (end == null) ? null : new BigInteger(end);
+    BigInteger split = splitBigIntegers(startBigInt, endBigInt);
+    if (split == null) {
+      return null;
+    }
+    return split.toByteArray();
+  }
+
   private static String splitStrings(
       String start,
       String end,
@@ -166,5 +216,51 @@ public class BoundarySplitterFactory {
         (BigInteger) typeMapper.mapStringToBigInteger(end, lengthToPad, partitionColumn, c);
     BigInteger bigIntegerSplit = splitBigIntegers(bigIntegerStart, bigIntegerEnd);
     return (String) typeMapper.unMapStringFromBigInteger(bigIntegerSplit, partitionColumn, c);
+  }
+
+  @VisibleForTesting
+  protected static BigInteger instantToBigIntNanos(Instant instant) {
+    if (instant == null) {
+      return null;
+    }
+    BigInteger seconds = BigInteger.valueOf(instant.getEpochSecond());
+    BigInteger nanos = BigInteger.valueOf(instant.getNano());
+    return seconds.multiply(SECONDS_TO_NANOS).add(nanos);
+  }
+
+  @VisibleForTesting
+  protected static Instant bigIntNanosToInstant(BigInteger nanos) {
+    if (nanos == null) {
+      return null;
+    }
+    BigInteger[] quotientReminder = nanos.divideAndRemainder(SECONDS_TO_NANOS);
+    long seconds = quotientReminder[0].longValueExact();
+    long nanoSeconds = quotientReminder[1].longValueExact();
+    return Instant.ofEpochSecond(seconds, nanoSeconds);
+  }
+
+  @VisibleForTesting
+  protected static Instant splitInstants(Instant start, Instant end) {
+    if ((start == null) && (end == null)) {
+      return null;
+    }
+    BigInteger bigIntegerStart = instantToBigIntNanos(start);
+    BigInteger bigIntegerEnd = instantToBigIntNanos(end);
+    BigInteger bigIntegerMid = splitBigIntegers(bigIntegerStart, bigIntegerEnd);
+    return bigIntNanosToInstant(bigIntegerMid);
+  }
+
+  @VisibleForTesting
+  protected static Instant timeStampToInstant(Timestamp timestamp) {
+    return (timestamp == null) ? null : timestamp.toInstant();
+  }
+
+  @VisibleForTesting
+  protected static Timestamp instantToTimestamp(Instant instant) {
+    return (instant == null) ? null : Timestamp.from(instant);
+  }
+
+  private static Timestamp splitTimestamps(Timestamp start, Timestamp end) {
+    return instantToTimestamp(splitInstants(timeStampToInstant(start), timeStampToInstant(end)));
   }
 }

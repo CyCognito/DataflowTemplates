@@ -15,12 +15,16 @@
  */
 package com.google.cloud.teleport.v2.source.reader.io.jdbc.uniformsplitter.range;
 
+import static com.google.cloud.teleport.v2.source.reader.io.jdbc.uniformsplitter.range.BoundaryExtractorFactory.BYTE_ARRAY_CLASS;
 import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.assertThrows;
 
 import com.google.cloud.teleport.v2.source.reader.io.jdbc.uniformsplitter.stringmapper.CollationMapper;
 import com.google.cloud.teleport.v2.source.reader.io.jdbc.uniformsplitter.stringmapper.CollationReference;
+import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.Map;
 import org.apache.beam.sdk.transforms.DoFn.ProcessContext;
 import org.apache.beam.sdk.values.PCollectionView;
@@ -92,6 +96,56 @@ public class BoundarySplitterFactoryTest {
         .isEqualTo(BigInteger.valueOf(21L));
     assertThat(splitter.getSplitPoint(null, BigInteger.valueOf(42L), null, null, null))
         .isEqualTo(BigInteger.valueOf(21L));
+  }
+
+  @Test
+  public void testBigDecimalBoundarySplitter() {
+    BoundarySplitter<BigDecimal> splitter = BoundarySplitterFactory.create(BigDecimal.class);
+    BigDecimal start =
+        new BigDecimal(BigInteger.valueOf(Long.MAX_VALUE).multiply(BigInteger.valueOf(10L)));
+    BigDecimal startByTwo =
+        new BigDecimal(BigInteger.valueOf(Long.MAX_VALUE).multiply(BigInteger.valueOf(5L)));
+    BigDecimal end =
+        new BigDecimal(BigInteger.valueOf(Long.MAX_VALUE).multiply(BigInteger.valueOf(20L)));
+    BigDecimal mid =
+        new BigDecimal(BigInteger.valueOf(Long.MAX_VALUE).multiply(BigInteger.valueOf(15L)));
+    BigDecimal zero = new BigDecimal(BigInteger.valueOf(Long.MAX_VALUE).multiply(BigInteger.ZERO));
+    BigDecimal negOne = new BigDecimal(BigInteger.valueOf(-1L));
+    BigDecimal longMax = new BigDecimal(BigInteger.valueOf(Long.MAX_VALUE));
+    BigDecimal longMin = new BigDecimal(BigInteger.valueOf(Long.MIN_VALUE));
+    BigDecimal fortyTwo = new BigDecimal(BigInteger.valueOf(42L));
+    BigDecimal twentyOne = new BigDecimal(BigInteger.valueOf(21L));
+
+    assertThat(splitter.getSplitPoint(start, end, null, null, null)).isEqualTo(mid);
+    assertThat(splitter.getSplitPoint(start, zero, null, null, null)).isEqualTo(startByTwo);
+    assertThat(splitter.getSplitPoint(longMin, longMax, null, null, null)).isEqualTo(negOne);
+    assertThat(splitter.getSplitPoint(null, null, null, null, null)).isNull();
+    assertThat(splitter.getSplitPoint(fortyTwo, null, null, null, null)).isEqualTo(twentyOne);
+    assertThat(splitter.getSplitPoint(null, fortyTwo, null, null, null)).isEqualTo(twentyOne);
+  }
+
+  @Test
+  public void testBytesIntegerBoundarySplitter() {
+    BoundarySplitter<byte[]> splitter = BoundarySplitterFactory.create(BYTE_ARRAY_CLASS);
+    byte[] start =
+        BigInteger.valueOf(Long.MAX_VALUE).multiply(BigInteger.valueOf(10L)).toByteArray();
+    byte[] startByTwo =
+        BigInteger.valueOf(Long.MAX_VALUE).multiply(BigInteger.valueOf(5L)).toByteArray();
+    byte[] end = BigInteger.valueOf(Long.MAX_VALUE).multiply(BigInteger.valueOf(20L)).toByteArray();
+    byte[] mid = BigInteger.valueOf(Long.MAX_VALUE).multiply(BigInteger.valueOf(15L)).toByteArray();
+    byte[] zero = BigInteger.ZERO.toByteArray();
+    byte[] negOne = BigInteger.valueOf(-1L).toByteArray();
+    byte[] longMax = BigInteger.valueOf(Long.MAX_VALUE).toByteArray();
+    byte[] longMin = BigInteger.valueOf(Long.MIN_VALUE).toByteArray();
+    byte[] fortyTwo = BigInteger.valueOf(42L).toByteArray();
+    byte[] twentyOne = BigInteger.valueOf(21L).toByteArray();
+
+    assertThat(splitter.getSplitPoint(start, end, null, null, null)).isEqualTo(mid);
+    assertThat(splitter.getSplitPoint(start, zero, null, null, null)).isEqualTo(startByTwo);
+    assertThat(splitter.getSplitPoint(longMax, longMin, null, null, null)).isEqualTo(negOne);
+    assertThat(splitter.getSplitPoint(null, null, null, null, null)).isNull();
+    assertThat(splitter.getSplitPoint(fortyTwo, null, null, null, null)).isEqualTo(twentyOne);
+    assertThat(splitter.getSplitPoint(null, fortyTwo, null, null, null)).isEqualTo(twentyOne);
   }
 
   @Test
@@ -211,6 +265,60 @@ public class BoundarySplitterFactoryTest {
     assertThrows(
         UnsupportedOperationException.class,
         () -> BoundarySplitterFactory.create(GenericObjectPool.class));
+  }
+
+  @Test
+  public void testInstantMapping() {
+    assertThat(BoundarySplitterFactory.instantToBigIntNanos(Instant.MIN))
+        .isEqualTo(new BigInteger("-31557014167219200000000000"));
+    assertThat(
+            BoundarySplitterFactory.bigIntNanosToInstant(
+                BoundarySplitterFactory.instantToBigIntNanos(Instant.MIN)))
+        .isEqualTo(Instant.MIN);
+    assertThat(BoundarySplitterFactory.instantToBigIntNanos(Instant.MAX))
+        .isEqualTo(new BigInteger("31556889864403199999999999"));
+    assertThat(
+            BoundarySplitterFactory.bigIntNanosToInstant(
+                BoundarySplitterFactory.instantToBigIntNanos(Instant.MAX)))
+        .isEqualTo(Instant.MAX);
+    assertThat(BoundarySplitterFactory.instantToBigIntNanos(Instant.EPOCH))
+        .isEqualTo(new BigInteger("0"));
+    assertThat(
+            BoundarySplitterFactory.bigIntNanosToInstant(
+                BoundarySplitterFactory.instantToBigIntNanos(Instant.EPOCH)))
+        .isEqualTo(Instant.EPOCH);
+    assertThat(BoundarySplitterFactory.instantToBigIntNanos(null)).isNull();
+    assertThat(BoundarySplitterFactory.bigIntNanosToInstant(null)).isNull();
+    assertThat(BoundarySplitterFactory.timeStampToInstant(null)).isNull();
+    assertThat(BoundarySplitterFactory.instantToTimestamp(null)).isNull();
+    assertThat(
+            BoundarySplitterFactory.timeStampToInstant(
+                Timestamp.valueOf("1970-01-01 00:00:00.000000000")))
+        .isEqualTo(Instant.EPOCH);
+    assertThat(BoundarySplitterFactory.instantToTimestamp(Instant.EPOCH))
+        .isEqualTo(Timestamp.valueOf("1970-01-01 00:00:00.000000000"));
+  }
+
+  @Test
+  public void testTimeStampSplitting() {
+    assertThat(BoundarySplitterFactory.splitInstants(null, null)).isEqualTo(null);
+    assertThat(BoundarySplitterFactory.splitInstants(null, Instant.EPOCH))
+        .isEqualTo(BoundarySplitterFactory.splitInstants(Instant.EPOCH, null));
+    assertThat(BoundarySplitterFactory.splitInstants(Instant.MIN, Instant.MAX))
+        .isEqualTo(Instant.parse("0000-07-01T23:59:59.999999999Z"));
+
+    BoundarySplitter<Timestamp> splitter = BoundarySplitterFactory.create(Timestamp.class);
+    assertThat(
+            splitter.getSplitPoint(
+                Timestamp.valueOf("1970-01-01 00:00:00.000000000"),
+                Timestamp.valueOf("1980-01-01 00:00:00.000000000"),
+                PartitionColumn.builder()
+                    .setColumnName("col1")
+                    .setColumnClass(Timestamp.class)
+                    .build(),
+                null,
+                null))
+        .isEqualTo(Timestamp.valueOf("1975-01-01 00:00:00.000000000"));
   }
 
   /* Not for production as it does not look at collation ordering */

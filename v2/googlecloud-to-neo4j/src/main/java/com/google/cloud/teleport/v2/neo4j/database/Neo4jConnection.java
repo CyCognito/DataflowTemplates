@@ -26,6 +26,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.neo4j.driver.Config;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.GraphDatabase;
+import org.neo4j.driver.Logging;
 import org.neo4j.driver.Session;
 import org.neo4j.driver.SessionConfig;
 import org.neo4j.driver.TransactionConfig;
@@ -41,6 +42,7 @@ public class Neo4jConnection implements AutoCloseable, Serializable {
   private final String database;
   private Driver driver;
   private Session session;
+  private Neo4jCapabilities capabilitiesCache = null;
 
   /** Constructor. */
   public Neo4jConnection(ConnectionParams settings, String templateVersion) {
@@ -50,7 +52,10 @@ public class Neo4jConnection implements AutoCloseable, Serializable {
             GraphDatabase.driver(
                 settings.getServerUrl(),
                 settings.asAuthToken(),
-                Config.builder().withUserAgent(Neo4jTelemetry.userAgent(templateVersion)).build()));
+                Config.builder()
+                    .withLogging(Logging.slf4j())
+                    .withUserAgent(Neo4jTelemetry.userAgent(templateVersion))
+                    .build()));
   }
 
   @VisibleForTesting
@@ -60,6 +65,10 @@ public class Neo4jConnection implements AutoCloseable, Serializable {
   }
 
   public Neo4jCapabilities capabilities() {
+    if (this.capabilitiesCache != null) {
+      return this.capabilitiesCache;
+    }
+
     try (var session = getSession()) {
       var result =
           session
@@ -68,7 +77,9 @@ public class Neo4jConnection implements AutoCloseable, Serializable {
                   Map.of("kernel", "Neo4j Kernel"))
               .single();
 
-      return new Neo4jCapabilities(result.get(0).asString(), result.get(1).asString());
+      this.capabilitiesCache =
+          new Neo4jCapabilities(result.get(0).asString(), result.get(1).asString());
+      return this.capabilitiesCache;
     }
   }
 
@@ -125,7 +136,7 @@ public class Neo4jConnection implements AutoCloseable, Serializable {
           "Executing CREATE OR REPLACE DATABASE Cypher query: {} against database {}",
           cypher,
           database);
-      executeCypher(
+      runAutocommit(
           cypher, Map.of("db", database), databaseResetMetadata("create-replace-database"));
     } catch (Exception ex) {
       deleteData();
@@ -136,28 +147,26 @@ public class Neo4jConnection implements AutoCloseable, Serializable {
   private void deleteData() {
     String ddeCypher = "MATCH (n) CALL { WITH n DETACH DELETE n } IN TRANSACTIONS";
     LOG.info("Executing delete Cypher query: {}", ddeCypher);
-    executeCypher(ddeCypher, databaseResetMetadata("cit-detach-delete"));
+    runAutocommit(ddeCypher, databaseResetMetadata("cit-detach-delete"));
   }
 
   private void dropSchema(Neo4jCapabilities capabilities) {
     try (var session = getSession()) {
-      if (capabilities.hasConstraints()) {
-        LOG.info("Dropping constraints");
-        var constraints =
-            session
-                .run(
-                    "SHOW CONSTRAINTS YIELD name",
-                    Map.of(),
-                    databaseResetMetadata("show-constraints"))
-                .list(r -> r.get(0).asString());
-        for (var constraint : constraints) {
-          LOG.info("Dropping constraint {}", constraint);
+      LOG.info("Dropping constraints");
+      var constraints =
+          session
+              .run(
+                  "SHOW CONSTRAINTS YIELD name",
+                  Map.of(),
+                  databaseResetMetadata("show-constraints"))
+              .list(r -> r.get(0).asString());
+      for (var constraint : constraints) {
+        LOG.info("Dropping constraint {}", constraint);
 
-          executeCypher(
-              String.format("DROP CONSTRAINT `%s`", constraint),
-              Map.of(),
-              databaseResetMetadata("drop-constraint"));
-        }
+        runAutocommit(
+            String.format("DROP CONSTRAINT %s", CypherPatterns.sanitize(constraint)),
+            Map.of(),
+            databaseResetMetadata("drop-constraint"));
       }
 
       LOG.info("Dropping indexes");
@@ -171,8 +180,10 @@ public class Neo4jConnection implements AutoCloseable, Serializable {
       for (var index : indexes) {
         LOG.info("Dropping index {}", index);
 
-        executeCypher(
-            String.format("DROP INDEX `%s`", index), Map.of(), databaseResetMetadata("drop-index"));
+        runAutocommit(
+            String.format("DROP INDEX %s", CypherPatterns.sanitize(index)),
+            Map.of(),
+            databaseResetMetadata("drop-index"));
       }
     }
   }
@@ -182,8 +193,8 @@ public class Neo4jConnection implements AutoCloseable, Serializable {
    *
    * @param cypher statement
    */
-  public void executeCypher(String cypher, TransactionConfig transactionConfig) {
-    executeCypher(cypher, Collections.emptyMap(), transactionConfig);
+  public void runAutocommit(String cypher, TransactionConfig transactionConfig) {
+    runAutocommit(cypher, Collections.emptyMap(), transactionConfig);
   }
 
   /**
@@ -191,7 +202,7 @@ public class Neo4jConnection implements AutoCloseable, Serializable {
    *
    * @param cypher statement
    */
-  public void executeCypher(
+  public void runAutocommit(
       String cypher, Map<String, Object> parameters, TransactionConfig transactionConfig) {
     try (Session session = getSession()) {
       session.run(cypher, parameters, transactionConfig).consume();

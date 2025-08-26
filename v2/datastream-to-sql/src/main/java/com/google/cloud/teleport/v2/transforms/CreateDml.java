@@ -41,9 +41,11 @@ public class CreateDml
 
   private static final Logger LOG = LoggerFactory.getLogger(CreateDml.class);
   private static final String WINDOW_DURATION = "1s";
-  private static final Integer NUM_THREADS = new Integer(100);
+  private static Integer numThreads = Integer.valueOf(100);
   private static DataSourceConfiguration dataSourceConfiguration;
   private static Map<String, String> schemaMap = new HashMap<String, String>();
+  private static Map<String, String> tableNameMap = new HashMap<String, String>();
+  private static Boolean orderByIncludesIsDeleted = false;
 
   private CreateDml(DataSourceConfiguration dataSourceConfiguration) {
     this.dataSourceConfiguration = dataSourceConfiguration;
@@ -58,24 +60,40 @@ public class CreateDml
     return this;
   }
 
+  public CreateDml withTableNameMap(Map<String, String> tableNameMap) {
+    this.tableNameMap = tableNameMap;
+    return this;
+  }
+
+  public CreateDml withOrderByIncludesIsDeleted(Boolean orderByIncludesIsDeleted) {
+    this.orderByIncludesIsDeleted = orderByIncludesIsDeleted;
+    return this;
+  }
+
+  public CreateDml withNumThreads(Integer numThreads) {
+    CreateDml.numThreads = numThreads;
+    return this;
+  }
+
   public DatastreamToDML getDatastreamToDML() {
     DatastreamToDML datastreamToDML;
     String driverName = this.dataSourceConfiguration.getDriverClassName().get();
     switch (driverName) {
       case "org.postgresql.Driver":
-        datastreamToDML =
-            DatastreamToPostgresDML.of(dataSourceConfiguration).withSchemaMap(this.schemaMap);
+        datastreamToDML = DatastreamToPostgresDML.of(dataSourceConfiguration);
         break;
       case "com.mysql.cj.jdbc.Driver":
-        datastreamToDML =
-            DatastreamToMySQLDML.of(dataSourceConfiguration).withSchemaMap(this.schemaMap);
+        datastreamToDML = DatastreamToMySQLDML.of(dataSourceConfiguration);
         break;
       default:
         throw new IllegalArgumentException(
             String.format("Database Driver %s is not supported.", driverName));
     }
 
-    return datastreamToDML.withSchemaMap(schemaMap);
+    return datastreamToDML
+        .withSchemaMap(this.schemaMap)
+        .withTableNameMap(this.tableNameMap)
+        .withOrderByIncludesIsDeleted(orderByIncludesIsDeleted);
   }
 
   @Override
@@ -85,7 +103,7 @@ public class CreateDml
     return input
         .apply(
             "Reshuffle Into Buckets",
-            Reshuffle.<FailsafeElement<String, String>>viaRandomKey().withNumBuckets(NUM_THREADS))
+            Reshuffle.<FailsafeElement<String, String>>viaRandomKey().withNumBuckets(numThreads))
         .apply("Format to Postgres DML", ParDo.of(datastreamToDML));
   }
 }

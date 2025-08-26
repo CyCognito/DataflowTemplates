@@ -16,7 +16,9 @@
 package com.google.cloud.teleport.v2.spanner.ddl;
 
 import com.google.auto.value.AutoValue;
+import com.google.auto.value.extension.memoized.Memoized;
 import com.google.cloud.spanner.Dialect;
+import com.google.cloud.teleport.v2.spanner.ddl.annotations.cassandra.CassandraAnnotations;
 import com.google.cloud.teleport.v2.spanner.type.Type;
 import com.google.common.collect.ImmutableList;
 import java.io.IOException;
@@ -34,6 +36,11 @@ public abstract class Column implements Serializable {
   public abstract Type type();
 
   public abstract ImmutableList<String> columnOptions();
+
+  @Memoized
+  public CassandraAnnotations cassandraAnnotation() {
+    return CassandraAnnotations.fromColumnOptions(columnOptions(), name());
+  }
 
   @Nullable
   public abstract Integer size();
@@ -157,6 +164,8 @@ public abstract class Column implements Serializable {
         return Type.Code.JSON.getName();
       case PG_JSONB:
         return Type.Code.PG_JSONB.getName();
+      case TOKENLIST:
+        return Type.Code.TOKENLIST.getName();
       case ARRAY:
         {
           Type arrayType = type.getArrayElementType();
@@ -312,6 +321,10 @@ public abstract class Column implements Serializable {
     }
 
     public abstract Builder columnOptions(ImmutableList<String> options);
+
+    public Builder array(Type t) {
+      return type(Type.array(t));
+    }
   }
 
   private static class SizedType {
@@ -366,6 +379,9 @@ public abstract class Column implements Serializable {
           }
           if (spannerType.equals(Type.Code.JSON.getName())) {
             return t(Type.json(), null);
+          }
+          if (spannerType.equals(Type.Code.TOKENLIST.getName())) {
+            return t(Type.tokenlist(), null);
           }
           if (spannerType.startsWith(Type.Code.ARRAY.getName())) {
             // Substring "ARRAY<"xxx">"

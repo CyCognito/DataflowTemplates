@@ -40,6 +40,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import net.jcip.annotations.NotThreadSafe;
+import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.GenericRecordBuilder;
 import org.apache.beam.it.common.PipelineLauncher.LaunchConfig;
@@ -81,6 +82,7 @@ public final class KafkaToBigQueryFlexAvroIT extends TemplateTestBase {
   private TableId tableId;
   private Schema bqSchema;
   private org.apache.avro.Schema avroSchema;
+  private org.apache.avro.Schema avroSchemaUsageEnum;
   private org.apache.avro.Schema otherAvroSchema;
 
   @Before
@@ -90,7 +92,9 @@ public final class KafkaToBigQueryFlexAvroIT extends TemplateTestBase {
     bqSchema =
         Schema.of(
             Field.of("productId", StandardSQLTypeName.INT64),
-            Field.newBuilder("productName", StandardSQLTypeName.STRING).setMaxLength(10L).build());
+            Field.newBuilder("productName", StandardSQLTypeName.STRING).setMaxLength(10L).build(),
+            Field.of("productSize", StandardSQLTypeName.FLOAT64),
+            Field.of("productUsage", StandardSQLTypeName.STRING));
 
     kafkaResourceManager =
         KafkaResourceManager.builder(testName).setHost(TestProperties.hostIp()).build();
@@ -98,6 +102,7 @@ public final class KafkaToBigQueryFlexAvroIT extends TemplateTestBase {
     URL avroSchemaResource = Resources.getResource("KafkaToBigQueryFlexAvroIT/avro_schema.avsc");
     gcsClient.uploadArtifact("avro_schema.avsc", avroSchemaResource.getPath());
     avroSchema = new org.apache.avro.Schema.Parser().parse(avroSchemaResource.openStream());
+    avroSchemaUsageEnum = avroSchema.getField("productUsage").schema();
 
     URL otherAvroSchemaResource =
         Resources.getResource("KafkaToBigQueryFlexAvroIT/other_avro_schema.avsc");
@@ -112,26 +117,13 @@ public final class KafkaToBigQueryFlexAvroIT extends TemplateTestBase {
   }
 
   @Test
-  public void testKafkaToBigQueryAvroInConfluentFormat() throws IOException, RestClientException {
-    tableId = bigQueryClient.createTable(testName, bqSchema);
-    baseKafkaToBigQueryAvro(
-        b ->
-            b.addParameter("messageFormat", "AVRO_CONFLUENT_WIRE_FORMAT")
-                .addParameter("schemaFormat", "SINGLE_SCHEMA_FILE")
-                .addParameter("confluentAvroSchemaPath", getGcsPath("avro_schema.avsc"))
-                .addParameter("writeMode", "SINGLE_TABLE_NAME")
-                .addParameter("outputTableSpec", toTableSpecLegacy(tableId))
-                .addParameter("useBigQueryDLQ", "false")
-                .addParameter("kafkaReadAuthenticationMode", "NONE"));
-  }
-
-  @Test
-  public void testKafkaToBigQueryAvroInConfluentFormatWithKey()
+  public void testKafkaToBigQueryAvroInConfluentFormatWithKeyAndDLQ()
       throws IOException, RestClientException {
     List<Field> fields = new ArrayList<>(bqSchema.getFields());
     fields.add(Field.of("_key", StandardSQLTypeName.BYTES));
     bqSchema = Schema.of(fields);
     tableId = bigQueryClient.createTable(testName + "WithKey", bqSchema);
+    deadletterTableId = TableId.of(bigQueryClient.getDatasetId(), testName + "_dlq");
     baseKafkaToBigQueryAvro(
         b ->
             b.addParameter("messageFormat", "AVRO_CONFLUENT_WIRE_FORMAT")
@@ -139,24 +131,10 @@ public final class KafkaToBigQueryFlexAvroIT extends TemplateTestBase {
                 .addParameter("confluentAvroSchemaPath", getGcsPath("avro_schema.avsc"))
                 .addParameter("writeMode", "SINGLE_TABLE_NAME")
                 .addParameter("outputTableSpec", toTableSpecLegacy(tableId))
-                .addParameter("useBigQueryDLQ", "false")
+                .addParameter("useBigQueryDLQ", "true")
+                .addParameter("outputDeadletterTable", toTableSpecLegacy(deadletterTableId))
                 .addParameter("kafkaReadAuthenticationMode", "NONE")
                 .addParameter("persistKafkaKey", "true"));
-  }
-
-  @Test
-  public void testKafkaToBigQueryAvroWithSchemaRegistry() throws IOException, RestClientException {
-    baseKafkaToBigQueryAvro(
-        b ->
-            b.addParameter("messageFormat", "AVRO_CONFLUENT_WIRE_FORMAT")
-                .addParameter("schemaFormat", "SCHEMA_REGISTRY")
-                .addParameter("schemaRegistryConnectionUrl", "http://10.128.0.60:8081")
-                .addParameter("writeMode", "DYNAMIC_TABLE_NAMES")
-                .addParameter("outputProject", PROJECT)
-                .addParameter("outputDataset", bqDatasetId)
-                .addParameter("bqTableNamePrefix", "")
-                .addParameter("useBigQueryDLQ", "false")
-                .addParameter("kafkaReadAuthenticationMode", "NONE"));
   }
 
   @Test
@@ -166,8 +144,10 @@ public final class KafkaToBigQueryFlexAvroIT extends TemplateTestBase {
         b ->
             b.addParameter("messageFormat", "AVRO_CONFLUENT_WIRE_FORMAT")
                 .addParameter("schemaFormat", "SCHEMA_REGISTRY")
-                // Schemas are registered with ids 3 and 4. If this test fails, check if the
-                // below schema registry address contains the expected schema registered.
+                // If this test fails, check if the below schema registry has
+                // correct schemas registered with the following IDs:
+                // - 5 (avro_schema.avsc)
+                // - 4 (other_avro_schema.avsc)
                 .addParameter("schemaRegistryConnectionUrl", "http://10.128.0.60:8081")
                 .addParameter("writeMode", "DYNAMIC_TABLE_NAMES")
                 .addParameter("outputProject", PROJECT)
@@ -194,29 +174,13 @@ public final class KafkaToBigQueryFlexAvroIT extends TemplateTestBase {
   }
 
   @Test
-  public void testKafkaToBigQueryAvroInNonConfluentFormatWithDLQ()
-      throws IOException, RestClientException {
-    tableId = bigQueryClient.createTable(testName, bqSchema);
-    deadletterTableId = TableId.of(bigQueryClient.getDatasetId(), testName + "_dlq");
-    baseKafkaToBigQueryAvro(
-        b ->
-            b.addParameter("messageFormat", "AVRO_BINARY_ENCODING")
-                .addParameter("schemaFormat", "SINGLE_SCHEMA_FILE")
-                .addParameter("binaryAvroSchemaPath", getGcsPath("avro_schema.avsc"))
-                .addParameter("writeMode", "SINGLE_TABLE_NAME")
-                .addParameter("outputTableSpec", toTableSpecLegacy(tableId))
-                .addParameter("useBigQueryDLQ", "true")
-                .addParameter("outputDeadletterTable", toTableSpecLegacy(deadletterTableId))
-                .addParameter("kafkaReadAuthenticationMode", "NONE"));
-  }
-
-  @Test
-  public void testKafkaToBigQueryAvroInNonConfluentFormatWithKey()
+  public void testKafkaToBigQueryAvroInNonConfluentFormatWithKeyAndDLQ()
       throws IOException, RestClientException {
     List<Field> fields = new ArrayList<>(bqSchema.getFields());
     fields.add(Field.of("_key", StandardSQLTypeName.BYTES));
     bqSchema = Schema.of(fields);
     tableId = bigQueryClient.createTable(testName + "WithKey", bqSchema);
+    deadletterTableId = TableId.of(bigQueryClient.getDatasetId(), testName + "_dlq");
     baseKafkaToBigQueryAvro(
         b ->
             b.addParameter("messageFormat", "AVRO_BINARY_ENCODING")
@@ -224,26 +188,10 @@ public final class KafkaToBigQueryFlexAvroIT extends TemplateTestBase {
                 .addParameter("binaryAvroSchemaPath", getGcsPath("avro_schema.avsc"))
                 .addParameter("writeMode", "SINGLE_TABLE_NAME")
                 .addParameter("outputTableSpec", toTableSpecLegacy(tableId))
-                .addParameter("useBigQueryDLQ", "false")
-                .addParameter("kafkaReadAuthenticationMode", "NONE")
-                .addParameter("persistKafkaKey", "true"));
-  }
-
-  @Test
-  public void testKafkaToBigQueryAvroWithExistingDLQ() throws IOException, RestClientException {
-    tableId = bigQueryClient.createTable(testName, bqSchema);
-    deadletterTableId = TableId.of(bigQueryClient.getDatasetId(), testName + "_dlq");
-
-    baseKafkaToBigQueryAvro(
-        b ->
-            b.addParameter("messageFormat", "AVRO_CONFLUENT_WIRE_FORMAT")
-                .addParameter("schemaFormat", "SINGLE_SCHEMA_FILE")
-                .addParameter("confluentAvroSchemaPath", getGcsPath("avro_schema.avsc"))
-                .addParameter("writeMode", "SINGLE_TABLE_NAME")
-                .addParameter("outputTableSpec", toTableSpecLegacy(tableId))
                 .addParameter("useBigQueryDLQ", "true")
                 .addParameter("outputDeadletterTable", toTableSpecLegacy(deadletterTableId))
-                .addParameter("kafkaReadAuthenticationMode", "NONE"));
+                .addParameter("kafkaReadAuthenticationMode", "NONE")
+                .addParameter("persistKafkaKey", "true"));
   }
 
   @Test
@@ -399,10 +347,8 @@ public final class KafkaToBigQueryFlexAvroIT extends TemplateTestBase {
         && options.getParameter("schemaFormat").equals("SCHEMA_REGISTRY")
         && options.getParameter("schemaRegistryConnectionUrl") != null) {
 
-      // Schemas are registered in schema registry with IDs 3 and 4 for Kafka Reads. So for these
-      // tests
-      // publish the messages with schema IDs 3 and 4.
-      publishDoubleSchemaMessages(topicName, 3, 4);
+      // Schemas are registered with ids 5 (avro_schema.avsc) and 4 (other_avro_schema.avsc).
+      publishDoubleSchemaMessages(topicName, 5, 4);
       tableId = TableId.of(bqDatasetId, avroSchema.getFullName().replace(".", "-"));
       TableId otherTableId =
           TableId.of(bqDatasetId, otherAvroSchema.getFullName().replace(".", "-"));
@@ -448,6 +394,10 @@ public final class KafkaToBigQueryFlexAvroIT extends TemplateTestBase {
                       11,
                       "productName",
                       "Dataflow",
+                      "productSize",
+                      2.5d,
+                      "productUsage",
+                      "HIGH",
                       "_key",
                       Base64.getEncoder().encodeToString("11".getBytes())),
                   Map.of(
@@ -455,14 +405,34 @@ public final class KafkaToBigQueryFlexAvroIT extends TemplateTestBase {
                       12,
                       "productName",
                       "Pub/Sub",
+                      "productSize",
+                      123.125d,
+                      "productUsage",
+                      "MEDIUM",
                       "_key",
                       Base64.getEncoder().encodeToString("12".getBytes()))));
     } else {
       assertThatBigQueryRecords(tableRows)
           .hasRecordsUnordered(
               List.of(
-                  Map.of("productId", 11, "productName", "Dataflow"),
-                  Map.of("productId", 12, "productName", "Pub/Sub")));
+                  Map.of(
+                      "productId",
+                      11,
+                      "productName",
+                      "Dataflow",
+                      "productSize",
+                      2.5d,
+                      "productUsage",
+                      "HIGH"),
+                  Map.of(
+                      "productId",
+                      12,
+                      "productName",
+                      "Pub/Sub",
+                      "productSize",
+                      123.125d,
+                      "productUsage",
+                      "MEDIUM")));
     }
   }
 
@@ -476,20 +446,20 @@ public final class KafkaToBigQueryFlexAvroIT extends TemplateTestBase {
             new StringSerializer(), new KafkaAvroSerializer(registryClient));
 
     for (int i = 1; i <= 10; i++) {
-      GenericRecord dataflow = createRecord(Integer.valueOf(i + "1"), "Dataflow", 0);
+      GenericRecord dataflow = createRecord(Integer.valueOf(i + "1"), "Dataflow", 2.5f, "HIGH");
       publish(kafkaProducer, topicName, i + "1", dataflow);
 
-      GenericRecord pubsub = createRecord(Integer.valueOf(i + "2"), "Pub/Sub", 0);
+      GenericRecord pubsub = createRecord(Integer.valueOf(i + "2"), "Pub/Sub", 123.125f, "MEDIUM");
       publish(kafkaProducer, topicName, i + "2", pubsub);
 
-      GenericRecord invalid = createRecord(Integer.valueOf(i + "3"), "InvalidNameTooLong", 0);
+      GenericRecord invalid =
+          createRecord(Integer.valueOf(i + "3"), "InvalidNameTooLong", 0f, "UNDEFINED");
       publish(kafkaProducer, topicName, i + "3", invalid);
-
-      try {
-        TimeUnit.SECONDS.sleep(3);
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-      }
+    }
+    try {
+      TimeUnit.SECONDS.sleep(1);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
     }
   }
 
@@ -504,33 +474,31 @@ public final class KafkaToBigQueryFlexAvroIT extends TemplateTestBase {
             new StringSerializer(), new KafkaAvroSerializer(registryClient));
 
     for (int i = 1; i <= 10; i++) {
-      GenericRecord dataflow = createRecord(Integer.valueOf(i + "1"), "Dataflow", 0);
+      GenericRecord dataflow = createRecord(Integer.valueOf(i + "1"), "Dataflow", 2.5f, "HIGH");
       publish(kafkaProducer, topicName, i + "1", dataflow);
 
-      GenericRecord pubsub = createRecord(Integer.valueOf(i + "2"), "Pub/Sub", 0);
+      GenericRecord pubsub = createRecord(Integer.valueOf(i + "2"), "Pub/Sub", 123.125f, "MEDIUM");
       publish(kafkaProducer, topicName, i + "2", pubsub);
 
-      GenericRecord invalid = createRecord(Integer.valueOf(i + "3"), "InvalidNameTooLong", 0);
+      GenericRecord invalid =
+          createRecord(Integer.valueOf(i + "3"), "InvalidNameTooLong", 0f, "UNDEFINED");
       publish(kafkaProducer, topicName, i + "3", invalid);
 
       GenericRecord otherDataflow =
-          createOtherRecord(Integer.valueOf(i + "4"), "Dataflow", "dataflow", 0);
+          createOtherRecord(Integer.valueOf(i + "4"), "Dataflow", "dataflow");
       publish(kafkaProducer, topicName, i + "4", otherDataflow);
 
-      GenericRecord otherPubsub =
-          createOtherRecord(Integer.valueOf(i + "5"), "Pub/Sub", "pubsub", 0);
+      GenericRecord otherPubsub = createOtherRecord(Integer.valueOf(i + "5"), "Pub/Sub", "pubsub");
       publish(kafkaProducer, topicName, i + "5", otherPubsub);
 
       GenericRecord otherInvalid =
-          createOtherRecord(
-              Integer.valueOf(i + "6"), "InvalidNameTooLong", "InvalidNameTooLong", 0);
+          createOtherRecord(Integer.valueOf(i + "6"), "InvalidNameTooLong", "InvalidNameTooLong");
       publish(kafkaProducer, topicName, i + "6", otherInvalid);
-
-      try {
-        TimeUnit.SECONDS.sleep(3);
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-      }
+    }
+    try {
+      TimeUnit.SECONDS.sleep(1);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
     }
   }
 
@@ -540,20 +508,20 @@ public final class KafkaToBigQueryFlexAvroIT extends TemplateTestBase {
             new StringSerializer(), new BinaryAvroSerializer(avroSchema));
 
     for (int i = 1; i <= 10; i++) {
-      GenericRecord dataflow = createRecord(Integer.valueOf(i + "1"), "Dataflow", 0);
+      GenericRecord dataflow = createRecord(Integer.valueOf(i + "1"), "Dataflow", 2.5f, "HIGH");
       publishBinary(kafkaProducer, topicName, i + "1", dataflow);
 
-      GenericRecord pubsub = createRecord(Integer.valueOf(i + "2"), "Pub/Sub", 0);
+      GenericRecord pubsub = createRecord(Integer.valueOf(i + "2"), "Pub/Sub", 123.125f, "MEDIUM");
       publishBinary(kafkaProducer, topicName, i + "2", pubsub);
 
-      GenericRecord invalid = createRecord(Integer.valueOf(i + "3"), "InvalidNameTooLong", 0);
+      GenericRecord invalid =
+          createRecord(Integer.valueOf(i + "3"), "InvalidNameTooLong", 0f, "UNDEFINED");
       publishBinary(kafkaProducer, topicName, i + "3", invalid);
-
-      try {
-        TimeUnit.SECONDS.sleep(3);
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-      }
+    }
+    try {
+      TimeUnit.SECONDS.sleep(1);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
     }
   }
 
@@ -590,14 +558,17 @@ public final class KafkaToBigQueryFlexAvroIT extends TemplateTestBase {
     }
   }
 
-  private GenericRecord createRecord(int id, String productName, double value) {
+  private GenericRecord createRecord(
+      int id, String productName, float productSize, String productUsage) {
     return new GenericRecordBuilder(avroSchema)
         .set("productId", id)
         .set("productName", productName)
+        .set("productSize", productSize)
+        .set("productUsage", new GenericData.EnumSymbol(avroSchemaUsageEnum, productUsage))
         .build();
   }
 
-  private GenericRecord createOtherRecord(int id, String productName, String name, double value) {
+  private GenericRecord createOtherRecord(int id, String productName, String name) {
     return new GenericRecordBuilder(otherAvroSchema)
         .set("productId", id)
         .set("productName", productName)

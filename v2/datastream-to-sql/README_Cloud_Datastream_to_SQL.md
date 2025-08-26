@@ -30,30 +30,33 @@ check [Provided templates documentation](https://cloud.google.com/dataflow/docs/
 on how to use it without having to build from sources using [Create job from template](https://console.cloud.google.com/dataflow/createjob?template=Cloud_Datastream_to_SQL).
 
 :bulb: This is a generated documentation based
-on [Metadata Annotations](https://github.com/GoogleCloudPlatform/DataflowTemplates#metadata-annotations)
+on [Metadata Annotations](https://github.com/GoogleCloudPlatform/DataflowTemplates/blob/main/contributor-docs/code-contributions.md#metadata-annotations)
 . Do not change this file directly.
 
 ## Parameters
 
 ### Required parameters
 
-* **inputFilePattern** : The file location for the Datastream files in Cloud Storage to replicate. This file location is typically the root path for the stream.
-* **databaseHost** : The SQL host to connect on.
-* **databaseUser** : The SQL user with all required permissions to write to all tables in replication.
-* **databasePassword** : The password for the SQL user.
+* **inputFilePattern**: The file location for the Datastream files in Cloud Storage to replicate. This file location is typically the root path for the stream.
+* **databaseHost**: The SQL host to connect on.
+* **databaseUser**: The SQL user with all required permissions to write to all tables in replication.
+* **databasePassword**: The password for the SQL user.
 
 ### Optional parameters
 
-* **gcsPubSubSubscription** : The Pub/Sub subscription with Datastream file notifications. For example, `projects/<PROJECT_ID>/subscriptions/<SUBSCRIPTION_ID>`.
-* **inputFileFormat** : The format of the output file produced by Datastream. For example, `avro` or `json`. Defaults to `avro`.
-* **streamName** : The name or template for the stream to poll for schema information. The default value is `{_metadata_stream}`.
-* **rfcStartDateTime** : The starting DateTime used to fetch from Cloud Storage (https://tools.ietf.org/html/rfc3339). Defaults to: 1970-01-01T00:00:00.00Z.
-* **dataStreamRootUrl** : Datastream API Root URL. Defaults to: https://datastream.googleapis.com/.
-* **databaseType** : The database type to write to (for example, Postgres). Defaults to: postgres.
-* **databasePort** : The SQL database port to connect to. The default value is `5432`.
-* **databaseName** : The name of the SQL database to connect to. The default value is `postgres`.
-* **schemaMap** : A map of key/values used to dictate schema name changes (ie. old_name:new_name,CaseError:case_error). Defaults to empty.
-* **customConnectionString** : Optional connection string which will be used instead of the default database string.
+* **gcsPubSubSubscription**: The Pub/Sub subscription with Datastream file notifications. For example, `projects/<PROJECT_ID>/subscriptions/<SUBSCRIPTION_ID>`.
+* **inputFileFormat**: The format of the output file produced by Datastream. For example, `avro` or `json`. Defaults to `avro`.
+* **streamName**: The name or template for the stream to poll for schema information. The default value is `{_metadata_stream}`.
+* **rfcStartDateTime**: The starting DateTime used to fetch from Cloud Storage (https://tools.ietf.org/html/rfc3339). Defaults to: 1970-01-01T00:00:00.00Z.
+* **dataStreamRootUrl**: Datastream API Root URL. Defaults to: https://datastream.googleapis.com/.
+* **databaseType**: The database type to write to (for example, Postgres). Defaults to: postgres.
+* **databasePort**: The SQL database port to connect to. The default value is `5432`.
+* **databaseName**: The name of the SQL database to connect to. The default value is `postgres`.
+* **schemaMap**: A map of key/values used to dictate schema name changes (ie. old_name:new_name,CaseError:case_error). Defaults to empty.
+* **customConnectionString**: Optional connection string which will be used instead of the default database string.
+* **numThreads**: Determines key parallelism of Format to DML step, specifically, the value is passed into Reshuffle.withNumBuckets. Defaults to: 100.
+* **databaseLoginTimeout**: The timeout in seconds for database login attempts. This helps prevent connection hangs when multiple workers try to connect simultaneously.
+* **orderByIncludesIsDeleted**: Order by configurations for data should include prioritizing data which is not deleted. Defaults to: false.
 
 
 
@@ -61,7 +64,7 @@ on [Metadata Annotations](https://github.com/GoogleCloudPlatform/DataflowTemplat
 
 ### Requirements
 
-* Java 11
+* Java 17
 * Maven
 * [gcloud CLI](https://cloud.google.com/sdk/gcloud), and execution of the
   following commands:
@@ -148,6 +151,9 @@ export DATABASE_PORT=5432
 export DATABASE_NAME=postgres
 export SCHEMA_MAP=""
 export CUSTOM_CONNECTION_STRING=""
+export NUM_THREADS=100
+export DATABASE_LOGIN_TIMEOUT=<databaseLoginTimeout>
+export ORDER_BY_INCLUDES_IS_DELETED=false
 
 gcloud dataflow flex-template run "cloud-datastream-to-sql-job" \
   --project "$PROJECT" \
@@ -166,7 +172,10 @@ gcloud dataflow flex-template run "cloud-datastream-to-sql-job" \
   --parameters "databasePassword=$DATABASE_PASSWORD" \
   --parameters "databaseName=$DATABASE_NAME" \
   --parameters "schemaMap=$SCHEMA_MAP" \
-  --parameters "customConnectionString=$CUSTOM_CONNECTION_STRING"
+  --parameters "customConnectionString=$CUSTOM_CONNECTION_STRING" \
+  --parameters "numThreads=$NUM_THREADS" \
+  --parameters "databaseLoginTimeout=$DATABASE_LOGIN_TIMEOUT" \
+  --parameters "orderByIncludesIsDeleted=$ORDER_BY_INCLUDES_IS_DELETED"
 ```
 
 For more information about the command, please check:
@@ -201,6 +210,9 @@ export DATABASE_PORT=5432
 export DATABASE_NAME=postgres
 export SCHEMA_MAP=""
 export CUSTOM_CONNECTION_STRING=""
+export NUM_THREADS=100
+export DATABASE_LOGIN_TIMEOUT=<databaseLoginTimeout>
+export ORDER_BY_INCLUDES_IS_DELETED=false
 
 mvn clean package -PtemplatesRun \
 -DskipTests \
@@ -209,7 +221,7 @@ mvn clean package -PtemplatesRun \
 -Dregion="$REGION" \
 -DjobName="cloud-datastream-to-sql-job" \
 -DtemplateName="Cloud_Datastream_to_SQL" \
--Dparameters="inputFilePattern=$INPUT_FILE_PATTERN,gcsPubSubSubscription=$GCS_PUB_SUB_SUBSCRIPTION,inputFileFormat=$INPUT_FILE_FORMAT,streamName=$STREAM_NAME,rfcStartDateTime=$RFC_START_DATE_TIME,dataStreamRootUrl=$DATA_STREAM_ROOT_URL,databaseType=$DATABASE_TYPE,databaseHost=$DATABASE_HOST,databasePort=$DATABASE_PORT,databaseUser=$DATABASE_USER,databasePassword=$DATABASE_PASSWORD,databaseName=$DATABASE_NAME,schemaMap=$SCHEMA_MAP,customConnectionString=$CUSTOM_CONNECTION_STRING" \
+-Dparameters="inputFilePattern=$INPUT_FILE_PATTERN,gcsPubSubSubscription=$GCS_PUB_SUB_SUBSCRIPTION,inputFileFormat=$INPUT_FILE_FORMAT,streamName=$STREAM_NAME,rfcStartDateTime=$RFC_START_DATE_TIME,dataStreamRootUrl=$DATA_STREAM_ROOT_URL,databaseType=$DATABASE_TYPE,databaseHost=$DATABASE_HOST,databasePort=$DATABASE_PORT,databaseUser=$DATABASE_USER,databasePassword=$DATABASE_PASSWORD,databaseName=$DATABASE_NAME,schemaMap=$SCHEMA_MAP,customConnectionString=$CUSTOM_CONNECTION_STRING,numThreads=$NUM_THREADS,databaseLoginTimeout=$DATABASE_LOGIN_TIMEOUT,orderByIncludesIsDeleted=$ORDER_BY_INCLUDES_IS_DELETED" \
 -f v2/datastream-to-sql
 ```
 
@@ -268,6 +280,9 @@ resource "google_dataflow_flex_template_job" "cloud_datastream_to_sql" {
     # databaseName = "postgres"
     # schemaMap = ""
     # customConnectionString = ""
+    # numThreads = "100"
+    # databaseLoginTimeout = "<databaseLoginTimeout>"
+    # orderByIncludesIsDeleted = "false"
   }
 }
 ```

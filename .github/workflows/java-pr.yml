@@ -25,6 +25,10 @@ on:
       - '**.xml'
       # Include python files and Dockerfiles used for YAML and xlang templates.
       - '**.py'
+      # Include Python requirements files for dependency updates
+      - '**/requirements.txt'
+      - 'python/default_base_*.txt'
+      - 'python/generate_all_dependencies.sh'
       - 'plugins/core-plugin/src/main/resources/**'
       # Include relevant GitHub Action files for running these checks.
       # This will make it easier to verify action changes don't break anything.
@@ -48,8 +52,9 @@ concurrency:
 
 env:
   MAVEN_OPTS: -Dorg.slf4j.simpleLogger.log.org.apache.maven.plugins.shade=error
+  IT_REGION: us-west2
 
-permissions: read-all
+permissions: write-all
 
 jobs:
   spotless_check:
@@ -58,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - name: Setup Environment
         id: setup-env
         uses: ./.github/actions/setup-env
@@ -70,7 +75,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - name: Setup Environment
         id: setup-env
         uses: ./.github/actions/setup-env
@@ -82,7 +87,7 @@ jobs:
     runs-on: [self-hosted, it]
     steps:
       - name: Checkout Code
-        uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - name: Setup Environment
         id: setup-env
         uses: ./.github/actions/setup-env
@@ -97,27 +102,25 @@ jobs:
     runs-on: [self-hosted, it]
     steps:
       - name: Checkout Code
-        uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - name: Setup Environment
         id: setup-env
         uses: ./.github/actions/setup-env
       - name: Run Unit Tests
         run: ./cicd/run-unit-tests
       - name: Upload Unit Tests Report
-        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+        uses: actions/upload-artifact@v4
         if: always() # always run even if the previous step fails
         with:
-          name: surefire-test-results
+          name: surefire-unit-test-results
           path: '**/surefire-reports/TEST-*.xml'
           retention-days: 1
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v4.0.1
+        uses: codecov/codecov-action@v5.5.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: GoogleCloudPlatform/DataflowTemplates
           files: 'target/site/jacoco-aggregate/jacoco.xml'
-          # Temp fix for https://github.com/codecov/codecov-action/issues/1487
-          version: v0.6.0
       - name: Cleanup Java Environment
         uses: ./.github/actions/cleanup-java-env
         if: always()
@@ -129,22 +132,23 @@ jobs:
     runs-on: [self-hosted, it]
     steps:
       - name: Checkout Code
-        uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - name: Setup Environment
         id: setup-env
         uses: ./.github/actions/setup-env
       - name: Run Integration Smoke Tests
-        run: | 
+        run: |
           ./cicd/run-it-smoke-tests \
-          --it-region="us-central1" \
+          --modules-to-build="DEFAULT" \
+          --it-region="${{ env.IT_REGION }}" \
           --it-project="cloud-teleport-testing" \
           --it-artifact-bucket="cloud-teleport-testing-it-gitactions" \
-          --it-private-connectivity="datastream-private-connect-us-central1"
+          --it-private-connectivity="datastream-connect-2"
       - name: Upload Smoke Tests Report
-        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+        uses: actions/upload-artifact@v4
         if: always() # always run even if the previous step fails
         with:
-          name: surefire-test-results
+          name: surefire-smoke-test-results
           path: '**/surefire-reports/TEST-*.xml'
           retention-days: 1
       - name: Cleanup Java Environment
@@ -158,24 +162,39 @@ jobs:
     runs-on: [self-hosted, it]
     steps:
       - name: Checkout Code
-        uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - name: Setup Environment
         id: setup-env
         uses: ./.github/actions/setup-env
       - name: Run Integration Tests
-        run: | 
+        run: |
           ./cicd/run-it-tests \
-          --it-region="us-central1" \
+          --modules-to-build="DEFAULT" \
+          --it-region="${{ env.IT_REGION }}" \
           --it-project="cloud-teleport-testing" \
+          --it-integration-test-parallelism=6 \
+          --it-thread-count=6 \
           --it-artifact-bucket="cloud-teleport-testing-it-gitactions" \
-          --it-private-connectivity="datastream-private-connect-us-central1"
+          --it-private-connectivity="datastream-connect-2"
       - name: Upload Integration Tests Report
-        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+        uses: actions/upload-artifact@v4
         if: always() # always run even if the previous step fails
         with:
-          name: surefire-test-results
+          name: surefire-integration-test-results
           path: '**/surefire-reports/TEST-*.xml'
           retention-days: 1
+      - name: Integration Test report on GitHub
+        uses: dorny/test-reporter@v2
+        if: always()
+        with:
+          name: Integration Test report on GitHub
+          path: '**/surefire-reports/TEST-*.xml'
+          reporter: java-junit
+          only-summary: 'true'
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fail-on-error: 'false'
+          list-suites: 'failed'
+          list-tests: 'failed'
       - name: Cleanup Java Environment
         uses: ./.github/actions/cleanup-java-env
         if: always()
@@ -188,17 +207,17 @@ jobs:
     runs-on: [self-hosted, perf]
     steps:
     - name: Checkout Code
-      uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
     - name: Setup Environment
       id: setup-env
       uses: ./.github/actions/setup-env
     - name: Run Load Tests
       run: |
         ./cicd/run-load-tests \
-        --it-region="us-central1" \
+        --it-region="${{ env.IT_REGION }}" \
         --it-project="cloud-teleport-testing" \
         --it-artifact-bucket="cloud-teleport-testing-it-gitactions" \
-        --it-private-connectivity="datastream-private-connect-us-central1"
+        --it-private-connectivity="datastream-connect-2"
     - name: Cleanup Java Environment
       uses: ./.github/actions/cleanup-java-env
       if: always()
